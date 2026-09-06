@@ -780,21 +780,21 @@ export default function ExamRepository() {
                           </Box>
                         )}
 
-                        <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
-                          <IconButton size="small" color="error" onClick={() => handleDeleteQ(qIdx)}>
-                            <Delete />
+                        {/* Unified Card Header: Tags on Left, Delete on Right (No overlapping) */}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5, pb: 1.5, borderBottom: '1px solid #f1f5f9' }}>
+                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <Chip label={`#${qIdx + 1}`} size="small" sx={{ fontWeight: 800 }} />
+                            <Chip label={q.type.toUpperCase()} size="small" color="primary" sx={{ fontWeight: 800 }} />
+                            <Chip label={`${q.points || 0} points`} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
+                          </Box>
+                          <IconButton size="small" color="error" onClick={() => handleDeleteQ(qIdx)} title="Delete Question">
+                            <Delete fontSize="small" />
                           </IconButton>
-                        </Box>
-                        
-                        <Box sx={{ display: 'flex', gap: 1, mb: 2.5, alignItems: 'center' }}>
-                          <Chip label={`#${qIdx + 1}`} size="small" sx={{ fontWeight: 800 }} />
-                          <Chip label={q.type.toUpperCase()} size="small" color="primary" sx={{ fontWeight: 800 }} />
-                          <Chip label={`${q.points || 0} points`} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
                         </Box>
 
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                           
-                          {/* Question Text (Full Width) */}
+                          {/* Question Text (Smooth auto-expand) */}
                           <TextField
                             fullWidth
                             label="Question Text"
@@ -802,7 +802,8 @@ export default function ExamRepository() {
                             onChange={(e) => handleUpdateQText(qIdx, e.target.value)}
                             size="small"
                             multiline
-                            rows={2}
+                            minRows={2}
+                            maxRows={6}
                             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                           />
 
@@ -900,12 +901,16 @@ export default function ExamRepository() {
 
                           {/* Short answer choice */}
                           {q.type === 'short-answer' && (
-                            <Box sx={{ pl: 3, borderLeft: '4px solid #f59e0b' }}>
+                            <Box sx={{ pl: 3, borderLeft: '4px solid #f59e0b', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#334155' }}>
+                                Short Answer Key
+                              </Typography>
                               <TextField
                                 fullWidth
-                                label="Expected Correct Answer"
+                                label="Expected Correct Answer Statement / Key Term"
                                 size="small"
-                                value={q.correctAnswer}
+                                value={q.correctAnswer && q.correctAnswer !== '0' ? q.correctAnswer : ''}
+                                placeholder="e.g. Specific key term, keyword, or concise statement"
                                 onChange={(e) => handleUpdateQCorrectAnswer(qIdx, e.target.value)}
                                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                               />
@@ -914,9 +919,23 @@ export default function ExamRepository() {
 
                           {/* Essay choice */}
                           {q.type === 'essay' && (
-                            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>
-                              Essay Question: Students compose their answer dynamically. No key is graded automatically.
-                            </Typography>
+                            <Box sx={{ pl: 3, borderLeft: '4px solid #8b5cf6', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#334155' }}>
+                                Essay Grading Rubric & Criteria
+                              </Typography>
+                              <TextField
+                                fullWidth
+                                multiline
+                                minRows={2}
+                                maxRows={4}
+                                label="Expected Analytical Points / Rubric Criteria"
+                                size="small"
+                                value={q.correctAnswer && q.correctAnswer !== '0' ? q.correctAnswer : ''}
+                                placeholder="Provide key points expected in students' responses..."
+                                onChange={(e) => handleUpdateQCorrectAnswer(qIdx, e.target.value)}
+                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                              />
+                            </Box>
                           )}
 
                           {/* Points setting and difficulty row (Vertical Stack) */}
@@ -936,10 +955,10 @@ export default function ExamRepository() {
                               </Grid>
                               <Grid item xs={12} md={6}>
                                 <FormControl fullWidth size="small">
-                                  <InputLabel>Difficulty Tier</InputLabel>
+                                  <InputLabel>Difficulty</InputLabel>
                                   <Select
                                     value={q.difficulty || 'medium'}
-                                    label="Difficulty Tier"
+                                    label="Difficulty"
                                     onChange={(e) => {
                                       if (!editingExam) return;
                                       const updated = { ...editingExam };
@@ -957,47 +976,51 @@ export default function ExamRepository() {
                             </Grid>
                           </Box>
 
-                          {/* Smart AI Regeneration Box in Repository */}
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 2, border: '1px solid #e9d5ff', bgcolor: 'rgba(123, 31, 162, 0.01)', borderRadius: 3 }}>
+                          {/* Clean, Unconfusing AI Revision Action Bar */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, pt: 1.5, borderTop: '1px solid #f1f5f9' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <AutoAwesome color="secondary" sx={{ fontSize: 16 }} />
-                              <Typography variant="caption" sx={{ fontWeight: 800, color: '#7b1fa2' }}>
-                                SMART AI REGENERATION TOOLS
+                              <AutoAwesome sx={{ color: '#6366f1', fontSize: 18 }} />
+                              <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                                AI Revision:
                               </Typography>
                             </Box>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
                               <Button
                                 variant="outlined"
-                                color="secondary"
                                 size="small"
-                                startIcon={<AutoAwesome />}
+                                startIcon={<AutoAwesome sx={{ fontSize: 14 }} />}
                                 onClick={() => handleRegenerateEditQ(qIdx, 'full')}
-                                sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 700 }}
+                                sx={{
+                                  textTransform: 'none',
+                                  borderRadius: 2,
+                                  fontWeight: 700,
+                                  fontSize: '0.8rem',
+                                  color: '#4338ca',
+                                  borderColor: '#c7d2fe',
+                                  bgcolor: '#eef2ff',
+                                  '&:hover': { bgcolor: '#e0e7ff', borderColor: '#a5b4fc' }
+                                }}
                               >
-                                Regenerate Full Question
+                                Re-generate with AI
                               </Button>
                               {q.type === 'multiple-choice' && (
                                 <Button
                                   variant="outlined"
-                                  color="secondary"
                                   size="small"
-                                  startIcon={<AutoAwesome />}
+                                  startIcon={<AutoAwesome sx={{ fontSize: 14 }} />}
                                   onClick={() => handleRegenerateEditQ(qIdx, 'options')}
-                                  sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 700 }}
+                                  sx={{
+                                    textTransform: 'none',
+                                    borderRadius: 2,
+                                    fontWeight: 700,
+                                    fontSize: '0.8rem',
+                                    color: '#6d28d9',
+                                    borderColor: '#ddd6fe',
+                                    bgcolor: '#f5f3ff',
+                                    '&:hover': { bgcolor: '#ede9fe', borderColor: '#c4b5fd' }
+                                  }}
                                 >
-                                  Regenerate Options Only
-                                </Button>
-                              )}
-                              {q.type !== 'essay' && (
-                                <Button
-                                  variant="outlined"
-                                  color="warning"
-                                  size="small"
-                                  startIcon={<AutoAwesome />}
-                                  onClick={() => handleRegenerateEditQ(qIdx, 'answer')}
-                                  sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 700 }}
-                                >
-                                  Regenerate Answer Key
+                                  Shuffle Choices
                                 </Button>
                               )}
                             </Box>

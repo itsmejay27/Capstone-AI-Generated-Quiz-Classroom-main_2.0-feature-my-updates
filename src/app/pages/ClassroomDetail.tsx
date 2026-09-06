@@ -8,7 +8,6 @@ import {
   Tabs,
   Tab,
   Button,
-  Grid,
   Chip,
   List,
   ListItem,
@@ -22,15 +21,13 @@ import {
   TableCell,
   TableBody,
   Divider,
-  Card,
-  CardContent,
-  CardActions,
   IconButton,
   Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  Snackbar,
   Alert,
 } from '@mui/material';
 import {
@@ -49,13 +46,16 @@ import {
   Description,
   InsertDriveFile,
   Visibility,
+  ContentCopy,
+  Code,
+  FolderOpen,
 } from '@mui/icons-material';
 import { useState } from 'react';
 
 // Academic grade converter standard for OMSC (Occidental Mindoro State College)
-// Integrated with the Base-65 Transmutation System (65% raw passing -> 75% transmuted passing)
+// Base-65 Transmutation System (65% raw passing -> 75% transmuted passing)
 function convertToTransmutedOMSCGrade(score: number, total: number) {
-  if (total <= 0) return { rawPct: 0, transmutedPct: 0, grade: '5.00', remark: 'Failed', color: 'error.main' };
+  if (total <= 0) return { rawPct: 0, transmutedPct: 0, grade: '5.00', remark: 'Failed', color: '#dc2626', bg: '#fee2e2' };
   
   const rawPct = (score / total) * 100;
   
@@ -68,57 +68,78 @@ function convertToTransmutedOMSCGrade(score: number, total: number) {
   
   let grade = '5.00';
   let remark = 'Failed';
-  let color = 'error.main';
+  let color = '#dc2626';
+  let bg = '#fee2e2';
   
   if (transmutedPct >= 98) {
-    grade = '1.00'; remark = 'Excellent'; color = 'success.main';
+    grade = '1.00'; remark = 'Excellent'; color = '#15803d'; bg = '#dcfce7';
   } else if (transmutedPct >= 95) {
-    grade = '1.25'; remark = 'Very Good'; color = 'success.main';
+    grade = '1.25'; remark = 'Very Good'; color = '#15803d'; bg = '#dcfce7';
   } else if (transmutedPct >= 92) {
-    grade = '1.50'; remark = 'Very Good'; color = 'success.main';
+    grade = '1.50'; remark = 'Very Good'; color = '#15803d'; bg = '#dcfce7';
   } else if (transmutedPct >= 89) {
-    grade = '1.75'; remark = 'Good'; color = 'success.main';
+    grade = '1.75'; remark = 'Good'; color = '#15803d'; bg = '#dcfce7';
   } else if (transmutedPct >= 86) {
-    grade = '2.00'; remark = 'Good'; color = 'success.main';
+    grade = '2.00'; remark = 'Good'; color = '#15803d'; bg = '#dcfce7';
   } else if (transmutedPct >= 83) {
-    grade = '2.25'; remark = 'Satisfactory'; color = 'info.main';
+    grade = '2.25'; remark = 'Satisfactory'; color = '#0369a1'; bg = '#e0f2fe';
   } else if (transmutedPct >= 80) {
-    grade = '2.50'; remark = 'Satisfactory'; color = 'info.main';
+    grade = '2.50'; remark = 'Satisfactory'; color = '#0369a1'; bg = '#e0f2fe';
   } else if (transmutedPct >= 77) {
-    grade = '2.75'; remark = 'Fair'; color = 'warning.main';
+    grade = '2.75'; remark = 'Fair'; color = '#b45309'; bg = '#fef3c7';
   } else if (transmutedPct >= 75) {
-    grade = '3.00'; remark = 'Passing'; color = 'warning.main';
+    grade = '3.00'; remark = 'Passing'; color = '#b45309'; bg = '#fef3c7';
   }
   
-  return { rawPct, transmutedPct, grade, remark, color };
+  return { rawPct, transmutedPct, grade, remark, color, bg };
 }
 
 function getMaterialIcon(filename: string) {
   const ext = filename.split('.').pop()?.toLowerCase();
-  if (ext === 'pdf') return <PictureAsPdf sx={{ fontSize: 32, color: '#e53935' }} />;
-  if (ext === 'doc' || ext === 'docx') return <Description sx={{ fontSize: 32, color: '#1565c0' }} />;
-  return <InsertDriveFile sx={{ fontSize: 32, color: '#546e7a' }} />;
+  if (ext === 'pdf') return <PictureAsPdf sx={{ fontSize: 28, color: '#dc2626' }} />;
+  if (ext === 'doc' || ext === 'docx') return <Description sx={{ fontSize: 28, color: '#2563eb' }} />;
+  return <InsertDriveFile sx={{ fontSize: 28, color: '#64748b' }} />;
 }
 
 export default function ClassroomDetail() {
   const { classroomId } = useParams();
-  const { currentUser, users, classrooms, exams, examAttempts, classroomMaterials, addClassroomMaterial, deleteClassroomMaterial } = useAuth();
+  const {
+    currentUser,
+    users,
+    classrooms,
+    exams,
+    examAttempts,
+    classroomMaterials,
+    addClassroomMaterial,
+    deleteClassroomMaterial,
+  } = useAuth();
   const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState(0);
   const [viewMaterial, setViewMaterial] = useState<any | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [copyToast, setCopyToast] = useState(false);
 
   const classroom = classrooms.find((c) => c.id === classroomId);
   const instructor = users.find((u) => u.id === classroom?.instructorId);
-  const students = users.filter((u) => classroom?.students.includes(u.id));
+  const students = users.filter((u) => classroom?.students?.includes(u.id));
 
   const isInstructor = currentUser?.role === 'instructor';
   const materials = classroomMaterials[classroomId || ''] || [];
 
   if (!classroom) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Typography>Classroom not found</Typography>
+      <Container maxWidth="lg" sx={{ py: 6, textAlign: 'center' }}>
+        <Paper elevation={0} sx={{ p: 5, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
+          <FolderOpen sx={{ fontSize: 48, color: '#94a3b8', mb: 1.5 }} />
+          <Typography variant="h6" fontWeight={800} color="text.primary">Classroom not found</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            The requested classroom may have been removed or archived.
+          </Typography>
+          <Button variant="contained" onClick={() => navigate('/dashboard')} sx={{ bgcolor: '#2563eb', fontWeight: 700 }}>
+            Back to Dashboard
+          </Button>
+        </Paper>
       </Container>
     );
   }
@@ -151,11 +172,9 @@ export default function ClassroomDetail() {
       type: file.type,
       uploadedAt: new Date().toISOString(),
       uploadedBy: currentUser?.name || 'Instructor',
-      // In a real app this would be a URL; here we store the filename for display
-      content: `This material "${file.name}" has been uploaded by the instructor for classroom study. Students can review this document to prepare for upcoming assessments.`,
+      content: `Study document "${file.name}" uploaded by the instructor for course study and exam preparation.`,
     };
     addClassroomMaterial(classroomId, material);
-    // Reset input
     e.target.value = '';
   };
 
@@ -166,734 +185,570 @@ export default function ClassroomDetail() {
     }
   };
 
+  const handleCopyClassCode = () => {
+    navigator.clipboard.writeText(classroom.classCode);
+    setCopyToast(true);
+  };
+
   const formatFileSize = (bytes: number) => {
+    if (!bytes) return '1.2 MB';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const tabCount = isInstructor ? 4 : 3;
-
   return (
-    <Container maxWidth="xl" sx={{ py: 4, px: { xs: 2, sm: 3, md: 5, lg: 6 } }}>
-      <Button
-        startIcon={<ArrowBack />}
-        onClick={() => navigate('/dashboard')}
-        sx={{ mb: 3 }}
-      >
-        Back to Dashboard
-      </Button>
-
-      {/* Header banner */}
-      <Paper
-        sx={{
-          mb: 3,
-          borderRadius: 4,
-          overflow: 'hidden',
-          boxShadow: '0 8px 30px rgba(30,58,138,0.12)',
-        }}
-      >
-        <Box
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc', py: 3, px: { xs: 2, sm: 3, md: 5, lg: 6 } }}>
+      <Container maxWidth="xl">
+        {/* Navigation Breadcrumb */}
+        <Button
+          startIcon={<ArrowBack />}
+          onClick={() => navigate('/dashboard')}
           sx={{
-            background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
-            p: { xs: 3, md: 4 },
-            color: 'white',
+            mb: 2.5,
+            color: '#475569',
+            fontWeight: 700,
+            textTransform: 'none',
+            '&:hover': { color: '#0f172a', bgcolor: 'rgba(0,0,0,0.04)' },
           }}
         >
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+          Back to Classrooms
+        </Button>
+
+        {/* ── Grounded LMS Classroom Header Banner ── */}
+        <Paper
+          elevation={0}
+          sx={{
+            mb: 3,
+            borderRadius: 3.5,
+            bgcolor: '#1e293b',
+            color: 'white',
+            overflow: 'hidden',
+            border: '1px solid #334155',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+          }}
+        >
+          <Box sx={{ p: { xs: 3, md: 4 }, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, gap: 3 }}>
             <Box>
-              <Typography variant="h4" fontWeight="bold" sx={{ letterSpacing: '-0.02em', mb: 0.5 }}>
+              <Typography variant="h4" fontWeight={900} sx={{ letterSpacing: '-0.02em', mb: 0.5, fontSize: { xs: '1.6rem', md: '2.1rem' } }}>
                 {classroom.name}
               </Typography>
-              <Typography variant="h6" sx={{ opacity: 0.85, fontWeight: 400 }}>
-                {classroom.section} &bull; {classroom.subject}
+              <Typography variant="subtitle1" sx={{ color: '#94a3b8', fontWeight: 600 }}>
+                {classroom.subject} &bull; Section {classroom.section}
               </Typography>
               {classroom.description && (
-                <Typography variant="body2" sx={{ mt: 1.5, opacity: 0.8, maxWidth: 600 }}>
+                <Typography variant="body2" sx={{ color: '#cbd5e1', mt: 1, maxWidth: 650, lineHeight: 1.5 }}>
                   {classroom.description}
                 </Typography>
               )}
-              <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+
+              {/* Class Info Pills */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2.5, flexWrap: 'wrap' }}>
+                <Tooltip title="Click to copy Class Code">
+                  <Chip
+                    icon={<Code sx={{ color: 'white !important', fontSize: '14px !important' }} />}
+                    label={`Class Code: ${classroom.classCode}`}
+                    onClick={handleCopyClassCode}
+                    deleteIcon={<ContentCopy sx={{ color: 'white !important', fontSize: '13px !important' }} />}
+                    onDelete={handleCopyClassCode}
+                    sx={{
+                      bgcolor: 'rgba(255,255,255,0.12)',
+                      color: 'white',
+                      fontWeight: 800,
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      cursor: 'pointer',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.22)' },
+                    }}
+                  />
+                </Tooltip>
+
                 <Chip
-                  label={`Code: ${classroom.classCode}`}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 'bold', backdropFilter: 'blur(8px)' }}
+                  icon={<People sx={{ color: 'white !important', fontSize: '14px !important' }} />}
+                  label={`${classroom.students?.length || 0} Students`}
+                  sx={{
+                    bgcolor: 'rgba(255,255,255,0.08)',
+                    color: 'white',
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                  }}
                 />
-                <Chip
-                  icon={<People sx={{ color: 'white !important' }} />}
-                  label={`${classroom.students.length} Students`}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', backdropFilter: 'blur(8px)' }}
-                />
+
+                {instructor && (
+                  <Chip
+                    avatar={<Avatar sx={{ width: 20, height: 20, bgcolor: '#3b82f6', fontSize: '0.65rem', color: 'white' }}>{instructor.name.charAt(0)}</Avatar>}
+                    label={`Instructor: ${instructor.name}`}
+                    sx={{
+                      bgcolor: 'rgba(255,255,255,0.08)',
+                      color: 'white',
+                      fontWeight: 700,
+                      fontSize: '0.72rem',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                    }}
+                  />
+                )}
               </Box>
             </Box>
+
             {isInstructor && (
-              <Button
-                variant="contained"
-                startIcon={<Add />}
-                onClick={() => navigate('/exam-generator')}
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  backdropFilter: 'blur(8px)',
-                  border: '1px solid rgba(255,255,255,0.4)',
-                  color: 'white',
-                  fontWeight: 'bold',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
-                }}
-              >
-                Generate Exam
-              </Button>
+              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={() => navigate(`/exam-generator/${classroomId}`)}
+                  sx={{
+                    bgcolor: '#2563eb',
+                    color: 'white',
+                    fontWeight: 800,
+                    px: 3,
+                    py: 1.2,
+                    borderRadius: 2.5,
+                    textTransform: 'none',
+                    boxShadow: '0 4px 14px rgba(37,99,235,0.4)',
+                    '&:hover': { bgcolor: '#1d4ed8' },
+                  }}
+                >
+                  Create Exam for Class
+                </Button>
+              </Box>
             )}
           </Box>
-        </Box>
 
-        {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onChange={(_, newValue) => setActiveTab(newValue)}
-          variant="scrollable"
-          scrollButtons="auto"
-          allowScrollButtonsMobile
-          sx={{
-            borderTop: '1px solid rgba(0,0,0,0.06)',
-            '& .MuiTab-root': { fontWeight: 600, minHeight: 52 },
-          }}
-        >
-          <Tab label="Exams & Quizzes" icon={<Quiz />} iconPosition="start" />
-          <Tab label="Study Materials" icon={<MenuBook />} iconPosition="start" />
-          <Tab label="People" icon={<People />} iconPosition="start" />
-          {isInstructor && (
-            <Tab label="Grades & Scores" icon={<Assessment />} iconPosition="start" />
-          )}
-        </Tabs>
-      </Paper>
+          {/* Clean LMS Navigation Tabs */}
+          <Tabs
+            value={activeTab}
+            onChange={(_, val) => setActiveTab(val)}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{
+              bgcolor: '#0f172a',
+              borderTop: '1px solid #334155',
+              px: 2,
+              '& .MuiTab-root': {
+                color: '#94a3b8',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                textTransform: 'none',
+                minHeight: 50,
+                px: 3,
+              },
+              '& .Mui-selected': {
+                color: '#ffffff !important',
+              },
+              '& .MuiTabs-indicator': {
+                bgcolor: '#3b82f6',
+                height: 3,
+              },
+            }}
+          >
+            <Tab label="Classwork & Assessments" icon={<Assignment />} iconPosition="start" />
+            <Tab label="Course Materials" icon={<MenuBook />} iconPosition="start" />
+            <Tab label="People & Roster" icon={<People />} iconPosition="start" />
+            {isInstructor && (
+              <Tab label="Gradebook" icon={<Assessment />} iconPosition="start" />
+            )}
+          </Tabs>
+        </Paper>
 
-      {/* TAB 0: EXAMS LIST */}
-      {activeTab === 0 && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
-          {classExams.length === 0 ? (
-            <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-              <Box sx={{
-                width: 80, height: 80, borderRadius: '50%',
-                bgcolor: 'rgba(25,118,210,0.08)', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2,
-              }}>
-                <Assignment sx={{ fontSize: 40, color: '#1976d2' }} />
+        {/* ── TAB 0: CLASSWORK & ASSESSMENTS ── */}
+        {activeTab === 0 && (
+          <Box>
+            {classExams.length === 0 ? (
+              <Paper elevation={0} sx={{ p: 6, textAlign: 'center', borderRadius: 3.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
+                <Assignment sx={{ fontSize: 48, color: '#94a3b8', mb: 1.5 }} />
+                <Typography variant="h6" fontWeight={800} color="#0f172a">No assessments scheduled yet</Typography>
+                <Typography variant="body2" color="#64748b" sx={{ mb: 3, maxWidth: 360, mx: 'auto' }}>
+                  {isInstructor
+                    ? 'Generate a new examination with AI or assign an existing exam from your repository.'
+                    : 'Your instructor has not posted any active exams yet. Check back soon.'}
+                </Typography>
+                {isInstructor && (
+                  <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center' }}>
+                    <Button variant="contained" onClick={() => navigate(`/exam-generator/${classroomId}`)} sx={{ bgcolor: '#2563eb', fontWeight: 700, textTransform: 'none' }}>
+                      Generate Exam
+                    </Button>
+                    <Button variant="outlined" onClick={() => navigate('/exam-repository')} sx={{ fontWeight: 700, textTransform: 'none' }}>
+                      Assign from Repository
+                    </Button>
+                  </Box>
+                )}
+              </Paper>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {classExams.map((exam) => {
+                  const status = !isInstructor ? getExamStatus(exam.id) : null;
+                  const attempt = examAttempts.find(
+                    (a) => a.examId === exam.id && a.studentId === currentUser?.id
+                  );
+
+                  return (
+                    <Paper
+                      key={exam.id}
+                      elevation={0}
+                      sx={{
+                        p: 3,
+                        borderRadius: 3,
+                        bgcolor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+                        display: 'flex',
+                        flexDirection: { xs: 'column', md: 'row' },
+                        alignItems: { xs: 'flex-start', md: 'center' },
+                        justifyContent: 'space-between',
+                        gap: 2.5,
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: '#cbd5e1',
+                          boxShadow: '0 6px 18px rgba(0,0,0,0.05)',
+                        },
+                      }}
+                    >
+                      {/* Left: Icon + Title + Due Date */}
+                      <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', minWidth: 0, flexGrow: 1 }}>
+                        <Box sx={{ width: 44, height: 44, borderRadius: 2.5, bgcolor: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', flexShrink: 0 }}>
+                          <Assignment sx={{ fontSize: 24 }} />
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="subtitle1" fontWeight={800} sx={{ color: '#0f172a', lineHeight: 1.25, mb: 0.5 }}>
+                            {exam.title}
+                          </Typography>
+                          {exam.description && (
+                            <Typography variant="body2" sx={{ color: '#64748b', fontSize: '0.82rem', mb: 1, noWrap: true }}>
+                              {exam.description}
+                            </Typography>
+                          )}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                            {exam.dueDate && (
+                              <Typography variant="caption" sx={{ color: '#dc2626', fontWeight: 700 }}>
+                                Due: {new Date(exam.dueDate).toLocaleDateString()} at {new Date(exam.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </Typography>
+                            )}
+                            <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                              {exam.totalPoints} points &bull; {exam.duration} mins &bull; {exam.activeQuestionCount || exam.questions?.length || 0} questions
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Box>
+
+                      {/* Right: Status / Action Button */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0, width: { xs: '100%', md: 'auto' }, justifyContent: { xs: 'space-between', md: 'flex-end' }, pt: { xs: 1.5, md: 0 }, borderTop: { xs: '1px solid #f1f5f9', md: 'none' } }}>
+                        {!isInstructor ? (
+                          status === 'completed' ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Chip
+                                label={`Score: ${attempt?.score ?? 0} / ${exam.totalPoints}`}
+                                size="small"
+                                sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800 }}
+                              />
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => navigate(`/exam/${exam.id}/results`)}
+                                sx={{ fontWeight: 700, textTransform: 'none' }}
+                              >
+                                View Results
+                              </Button>
+                            </Box>
+                          ) : (
+                            <Button
+                              variant="contained"
+                              onClick={() => navigate(`/exam/${exam.id}/take`)}
+                              sx={{
+                                bgcolor: '#2563eb',
+                                color: 'white',
+                                fontWeight: 800,
+                                px: 3,
+                                py: 1,
+                                borderRadius: 2,
+                                textTransform: 'none',
+                                '&:hover': { bgcolor: '#1d4ed8' },
+                              }}
+                            >
+                              Take Exam
+                            </Button>
+                          )
+                        ) : (
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => setActiveTab(3)}
+                              sx={{ fontWeight: 700, textTransform: 'none' }}
+                            >
+                              View Scores
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => navigate('/exam-repository')}
+                              sx={{ fontWeight: 700, textTransform: 'none' }}
+                            >
+                              Edit in Repository
+                            </Button>
+                          </Box>
+                        )}
+                      </Box>
+                    </Paper>
+                  );
+                })}
               </Box>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
-                No exams or quizzes scheduled yet
+            )}
+          </Box>
+        )}
+
+        {/* ── TAB 1: COURSE MATERIALS ── */}
+        {activeTab === 1 && (
+          <Box>
+            {isInstructor && (
+              <Box sx={{ mb: 3, display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  component="label"
+                  variant="contained"
+                  startIcon={<Upload />}
+                  sx={{ bgcolor: '#2563eb', fontWeight: 800, textTransform: 'none', borderRadius: 2.5 }}
+                >
+                  Upload Study Material
+                  <input type="file" hidden onChange={handleMaterialUpload} accept=".pdf,.doc,.docx,.txt" />
+                </Button>
+              </Box>
+            )}
+
+            {materials.length === 0 ? (
+              <Paper elevation={0} sx={{ p: 6, textAlign: 'center', borderRadius: 3.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
+                <MenuBook sx={{ fontSize: 48, color: '#94a3b8', mb: 1.5 }} />
+                <Typography variant="h6" fontWeight={800} color="#0f172a">No study materials uploaded yet</Typography>
+                <Typography variant="body2" color="#64748b" sx={{ maxWidth: 360, mx: 'auto' }}>
+                  {isInstructor
+                    ? 'Upload lecture notes, slide handouts, or syllabus files for students.'
+                    : 'Course notes uploaded by your instructor will appear here.'}
+                </Typography>
+              </Paper>
+            ) : (
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2.5 }}>
+                {materials.map((mat: any) => (
+                  <Paper
+                    key={mat.id}
+                    elevation={0}
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 3,
+                      bgcolor: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 2,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+                      <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {getMaterialIcon(mat.name)}
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="subtitle2" fontWeight={800} sx={{ color: '#0f172a', noWrap: true }}>
+                          {mat.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                          {formatFileSize(mat.size)} &bull; Uploaded {new Date(mat.uploadedAt).toLocaleDateString()}
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<Visibility />}
+                        onClick={() => setViewMaterial(mat)}
+                        sx={{ fontWeight: 700, textTransform: 'none' }}
+                      >
+                        Preview
+                      </Button>
+                      {isInstructor && (
+                        <IconButton size="small" color="error" onClick={() => setDeleteConfirm(mat.id)}>
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      )}
+                    </Box>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {/* ── TAB 2: PEOPLE & ROSTER ── */}
+        {activeTab === 2 && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {/* Teacher Card */}
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
+              <Typography variant="subtitle2" fontWeight={800} sx={{ color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 2 }}>
+                Teacher / Instructor
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                {isInstructor
-                  ? 'Generate a new exam or assign one from your repository.'
-                  : 'Your instructor has not posted any exams yet. Check back later.'}
-              </Typography>
-              {isInstructor && (
-                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <Button variant="contained" onClick={() => navigate('/exam-repository')}>
-                    Assign from Repository
-                  </Button>
-                  <Button variant="outlined" onClick={() => navigate('/exam-generator')}>
-                    Generate with AI
-                  </Button>
+              {instructor && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Avatar sx={{ width: 44, height: 44, bgcolor: '#7c3aed', fontWeight: 800 }}>
+                    {instructor.name.charAt(0)}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={800} sx={{ color: '#0f172a' }}>
+                      {instructor.name}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                      {instructor.email}
+                    </Typography>
+                  </Box>
+                  <Chip label="Instructor" size="small" sx={{ ml: 'auto', bgcolor: '#f5f3ff', color: '#7c3aed', fontWeight: 800 }} />
                 </Box>
               )}
             </Paper>
-          ) : (
-            classExams.map((exam) => {
-              const status = !isInstructor ? getExamStatus(exam.id) : null;
-              const attempt = examAttempts.find(
-                (a) => a.examId === exam.id && a.studentId === currentUser?.id
-              );
-              const isFuture = exam.postDate && new Date(exam.postDate) > new Date();
 
-              const statusColor: any = {
-                completed: { bg: '#dcfce7', border: '#16a34a', text: '#15803d', label: 'Completed' },
-                'in-progress': { bg: '#fef9c3', border: '#ca8a04', text: '#854d0e', label: 'In Progress' },
-                'not-started': { bg: '#f1f5f9', border: '#94a3b8', text: '#475569', label: 'Not Started' },
-              };
-              const sc = status ? statusColor[status] : null;
-
-              return (
-                <Paper
-                  key={exam.id}
-                  elevation={0}
-                  sx={{
-                    width: '100%',
-                    minHeight: { md: 110 },
-                    bgcolor: 'white',
-                    borderRadius: 3,
-                    border: '1px solid #e2e8f0',
-                    borderLeft: `6px solid ${sc ? sc.border : '#1e3a8a'}`,
-                    p: 3,
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
-                      borderColor: '#cbd5e1',
-                    },
-                    display: 'flex',
-                    flexDirection: { xs: 'column', md: 'row' },
-                    alignItems: { xs: 'flex-start', md: 'center' },
-                    justifyContent: 'space-between',
-                    gap: 2.5,
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {/* Left Section: Icon + Text Content */}
-                  <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'flex-start', flexGrow: 1, minWidth: 0 }}>
-                    <Box sx={{
-                      width: 46,
-                      height: 46,
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      color: 'white',
-                      boxShadow: '0 4px 12px rgba(30,58,138,0.2)',
-                    }}>
-                      <Quiz sx={{ fontSize: 24 }} />
-                    </Box>
-                    <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: 0.5 }}>
-                        <Typography
-                          variant="h6"
-                          fontWeight={800}
-                          sx={{
-                            color: 'text.primary',
-                            lineHeight: 1.25,
-                            letterSpacing: '-0.01em',
-                            fontSize: '1.05rem',
-                          }}
-                        >
-                          {exam.title}
-                        </Typography>
-                        {sc && (
-                          <Chip
-                            size="small"
-                            label={sc.label}
-                            sx={{
-                              bgcolor: sc.bg,
-                              color: sc.text,
-                              border: `1px solid ${sc.border}`,
-                              fontWeight: 700,
-                              fontSize: '0.68rem',
-                              height: 20
-                            }}
-                          />
-                        )}
-                      </Box>
-                      {exam.description && (
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            color: 'text.secondary',
-                            fontSize: '0.82rem',
-                            lineHeight: 1.5,
-                            mb: 1.5,
-                            overflow: 'hidden',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                          }}
-                        >
-                          {exam.description}
-                        </Typography>
-                      )}
-                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                        {exam.postDate && (
-                          <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                            Posted: {new Date(exam.postDate).toLocaleString()}
-                          </Typography>
-                        )}
-                        {exam.dueDate && (
-                          <Typography variant="caption" color="error.main" fontWeight="700">
-                            Due: {new Date(exam.dueDate).toLocaleString()}
-                          </Typography>
-                        )}
-                      </Box>
-
-                      {!isInstructor && status === 'completed' && attempt?.score !== undefined && (
-                        <Box sx={{ mt: 1.5, p: 1, px: 1.5, bgcolor: '#dcfce7', borderRadius: 2, border: '1px solid #86efac', display: 'inline-block' }}>
-                          <Typography variant="caption" fontWeight="bold" color="success.dark" sx={{ fontSize: '0.75rem' }}>
-                            Score: {attempt.score} / {exam.totalPoints}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Box>
-                  </Box>
-
-                  {/* Right Section: Details Chips & Action Button */}
-                  <Box sx={{
-                    display: 'flex',
-                    flexDirection: { xs: 'column', md: 'row' },
-                    alignItems: { xs: 'center', md: 'flex-end' },
-                    gap: 2,
-                    flexShrink: 0,
-                    minWidth: { md: '190px' },
-                    width: { xs: '100%', md: 'auto' },
-                    justifyContent: { xs: 'space-between', md: 'flex-end' },
-                    borderTop: { xs: '1px solid #f1f5f9', md: 'none' },
-                    pt: { xs: 1.5, md: 0 },
-                    mt: { xs: 1, md: 0 }
-                  }}>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: { md: 1 } }}>
-                      <Chip icon={<Schedule sx={{ fontSize: '13px !important' }} />} label={`${exam.duration} mins`} size="small" variant="outlined" sx={{ height: 24, fontSize: '0.7rem', fontWeight: 600 }} />
-                      <Chip label={`${exam.totalPoints} pts`} size="small" variant="outlined" sx={{ height: 24, fontSize: '0.7rem', fontWeight: 600 }} />
-                      <Chip label={`${exam.activeQuestionCount || exam.questions.length} items`} size="small" variant="outlined" sx={{ height: 24, fontSize: '0.7rem', fontWeight: 600 }} />
-                    </Box>
-
-                    {isInstructor ? (
-                      <Button size="small" variant="outlined" onClick={() => navigate('/exam-repository')} sx={{ minWidth: 150, fontWeight: 700 }}>
-                        Manage in Repository
-                      </Button>
-                    ) : status === 'completed' ? (
-                      <Button size="small" variant="outlined" color="success" onClick={() => navigate(`/exam/${exam.id}/results`)} sx={{ minWidth: 150, fontWeight: 700 }}>
-                        View Submission
-                      </Button>
-                    ) : (
-                      <Button size="small" variant="contained" disabled={!!isFuture} onClick={() => navigate(`/exam/${exam.id}/take`)} sx={{ minWidth: 150, fontWeight: 700 }}>
-                        {status === 'in-progress' ? 'Continue Exam' : 'Start Exam'}
-                      </Button>
-                    )}
-                  </Box>
-                </Paper>
-              );
-            })
-          )}
-        </Box>
-      )}
-
-      {/* TAB 1: STUDY MATERIALS */}
-      {activeTab === 1 && (
-        <Box>
-          {/* Instructor upload section */}
-          {isInstructor && (
-            <Paper
-              sx={{
-                p: 3, mb: 3, borderRadius: 4,
-                background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
-                border: '1px solid #bae6fd',
-                boxShadow: '0 4px 16px rgba(3,105,161,0.08)',
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-                <Box>
-                  <Typography variant="h6" fontWeight="bold" color="#0c4a6e">
-                    Upload Study Materials
-                  </Typography>
-                  <Typography variant="body2" color="#0369a1">
-                    Upload PDFs, Word documents, or text files for students to study before assessments.
-                  </Typography>
-                </Box>
-                <Button
-                  variant="contained"
-                  component="label"
-                  startIcon={<Upload />}
-                  sx={{
-                    background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)',
-                    boxShadow: '0 4px 12px rgba(3,105,161,0.3)',
-                    '&:hover': { boxShadow: '0 6px 16px rgba(3,105,161,0.4)' },
-                  }}
-                >
-                  Upload Material
-                  <input type="file" hidden accept=".pdf,.doc,.docx,.txt,.ppt,.pptx" onChange={handleMaterialUpload} />
-                </Button>
+            {/* Students List */}
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
+                <Typography variant="subtitle2" fontWeight={800} sx={{ color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Enrolled Students ({students.length})
+                </Typography>
               </Box>
-            </Paper>
-          )}
 
-          {/* Materials grid */}
-          {materials.length === 0 ? (
-            <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-              <Box sx={{
-                width: 80, height: 80, borderRadius: '50%',
-                bgcolor: 'rgba(3,105,161,0.08)', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2,
-              }}>
-                <MenuBook sx={{ fontSize: 40, color: '#0369a1' }} />
-              </Box>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
-                No study materials yet
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {isInstructor
-                  ? 'Upload lecture notes, readings, or slide decks to help students prepare.'
-                  : 'Your instructor has not uploaded any materials yet. Check back later.'}
-              </Typography>
-            </Paper>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-              {materials.map((mat) => (
-                <Paper
-                  key={mat.id}
-                  elevation={0}
-                  sx={{
-                    width: '100%',
-                    minHeight: { sm: 76 },
-                    bgcolor: 'white',
-                    borderRadius: 3,
-                    border: '1px solid #e2e8f0',
-                    borderLeft: '6px solid #0288d1',
-                    p: 2.5,
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
-                      borderColor: '#cbd5e1',
-                    },
-                    display: 'flex',
-                    flexDirection: { xs: 'column', sm: 'row' },
-                    alignItems: { xs: 'flex-start', sm: 'center' },
-                    justifyContent: 'space-between',
-                    gap: 2,
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {/* Left Section: File Icon + File Info */}
-                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexGrow: 1, minWidth: 0 }}>
-                    <Box sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 2,
-                      bgcolor: '#f0f9ff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      border: '1px solid #bae6fd'
-                    }}>
-                      {getMaterialIcon(mat.name)}
+              {students.length === 0 ? (
+                <Typography variant="body2" color="#64748b" sx={{ py: 3, textAlign: 'center' }}>
+                  No students enrolled yet. Share Class Code <strong>{classroom.classCode}</strong> with your students.
+                </Typography>
+              ) : (
+                <List disablePadding>
+                  {students.map((student, idx) => (
+                    <Box key={student.id}>
+                      <ListItem sx={{ px: 1, py: 1.5 }}>
+                        <ListItemAvatar>
+                          <Avatar sx={{ width: 36, height: 36, bgcolor: '#2563eb', fontWeight: 700, fontSize: '0.85rem' }}>
+                            {student.name.charAt(0)}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={<Typography fontWeight={700} sx={{ color: '#0f172a', fontSize: '0.9rem' }}>{student.name}</Typography>}
+                          secondary={student.email}
+                        />
+                        <Chip label={`Student #${idx + 1}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontSize: '0.7rem', fontWeight: 700 }} />
+                      </ListItem>
+                      {idx < students.length - 1 && <Divider component="li" />}
                     </Box>
-                    <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                      <Typography
-                        variant="subtitle2"
-                        fontWeight={800}
-                        sx={{
-                          color: 'text.primary',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          fontSize: '0.92rem',
-                          lineHeight: 1.3
-                        }}
-                      >
-                        {mat.name}
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 0.5, alignItems: 'center' }}>
-                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                          Size: {formatFileSize(mat.size)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          &bull;
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Uploaded by {mat.uploadedBy}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          &bull;
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {new Date(mat.uploadedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Box>
-
-                  {/* Right Section: View / Delete Action */}
-                  <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    flexShrink: 0,
-                    minWidth: { sm: '160px' },
-                    width: { xs: '100%', sm: 'auto' },
-                    justifyContent: { xs: 'space-between', sm: 'flex-end' },
-                    borderTop: { xs: '1px solid #f1f5f9', sm: 'none' },
-                    pt: { xs: 1.5, sm: 0 },
-                    mt: { xs: 1, sm: 0 }
-                  }}>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      startIcon={<Visibility />}
-                      sx={{
-                        fontWeight: 700,
-                        background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)',
-                        px: 2.5,
-                        height: 32,
-                      }}
-                      onClick={() => setViewMaterial(mat)}
-                    >
-                      View Notes
-                    </Button>
-                    {isInstructor && (
-                      <Tooltip title="Delete material">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => setDeleteConfirm(mat.id)}
-                          sx={{
-                            bgcolor: '#fef2f2',
-                            border: '1px solid #fee2e2',
-                            '&:hover': { bgcolor: '#fee2e2' },
-                            width: 32,
-                            height: 32,
-                          }}
-                        >
-                          <Delete fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Box>
-                </Paper>
-              ))}
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* TAB 2: PEOPLE LIST */}
-      {activeTab === 2 && (
-        <Paper sx={{ p: 3.5, borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
-          <Typography variant="h6" fontWeight="bold" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <People color="primary" /> Class Members
-          </Typography>
-
-          <Typography variant="subtitle1" fontWeight="bold" sx={{ color: 'text.secondary', mb: 1 }}>
-            Class Instructor
-          </Typography>
-          <List disablePadding sx={{ mb: 4 }}>
-            {instructor && (
-              <ListItem sx={{ px: 1 }}>
-                <ListItemAvatar>
-                  <Avatar sx={{ background: 'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 100%)', fontWeight: 'bold' }}>
-                    {instructor.name.charAt(0)}
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={<Typography fontWeight="bold">{instructor.name}</Typography>}
-                  secondary={instructor.email}
-                />
-                <Chip label="Instructor" size="small" color="secondary" sx={{ ml: 'auto' }} />
-              </ListItem>
-            )}
-          </List>
-
-          <Divider sx={{ my: 3 }} />
-
-          <Typography variant="subtitle1" fontWeight="bold" sx={{ color: 'text.secondary', mb: 1 }}>
-            Class Students ({students.length})
-          </Typography>
-          {students.length === 0 ? (
-            <Box sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
-                No students enrolled yet. Share code <strong>{classroom.classCode}</strong> with students.
-              </Typography>
-            </Box>
-          ) : (
-            <List disablePadding>
-              {students.map((student, idx) => (
-                <Box key={student.id}>
-                  <ListItem sx={{ px: 1, py: 1.5 }}>
-                    <ListItemAvatar>
-                      <Avatar sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)', fontWeight: 'bold' }}>
-                        {student.name.charAt(0)}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={<Typography fontWeight="medium">{student.name}</Typography>}
-                      secondary={student.email}
-                    />
-                    <Chip label={`#${idx + 1}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', ml: 'auto' }} />
-                  </ListItem>
-                  {idx < students.length - 1 && <Divider variant="inset" component="li" />}
-                </Box>
-              ))}
-            </List>
-          )}
-        </Paper>
-      )}
-
-      {/* TAB 3: GRADES MATRIX (INSTRUCTOR ONLY) */}
-      {activeTab === 3 && isInstructor && (
-        <Box>
-          {/* Assessment Type Legend */}
-          <Box sx={{ display: 'flex', gap: 1.5, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-            <Typography variant="body2" color="text.secondary" fontWeight={700}>Assessment Types:</Typography>
-            <Chip size="small" label="Midterm Exam" sx={{ bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 700, border: '1px solid #bfdbfe' }} />
-            <Chip size="small" label="Final Exam" sx={{ bgcolor: '#fee2e2', color: '#991b1b', fontWeight: 700, border: '1px solid #fecaca' }} />
-            <Chip size="small" label="Other/Custom" sx={{ bgcolor: '#f3f4f6', color: '#374151', fontWeight: 700, border: '1px solid #d1d5db' }} />
+                  ))}
+                </List>
+              )}
+            </Paper>
           </Box>
+        )}
 
-          <TableContainer
-            component={Paper}
-            sx={{
-              borderRadius: 4,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-              overflowX: 'auto',
-              '&::-webkit-scrollbar': { height: 6 },
-              '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 3 },
-            }}
-          >
-            <Table sx={{ minWidth: 650 }}>
-              <TableHead sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)' }}>
-                <TableRow>
-                  <TableCell style={{ fontWeight: 'bold', color: 'white', minWidth: 160 }}>Student Name</TableCell>
-                  <TableCell style={{ fontWeight: 'bold', color: 'white', minWidth: 200 }}>Email Address</TableCell>
-                  {rawClassExams.map((exam) => {
-                    const examType = exam.type || '';
-                    const isMidterm = examType.toLowerCase().includes('midterm');
-                    const isFinal = examType.toLowerCase().includes('final');
-                    const typeBg = isMidterm ? 'rgba(219,234,254,0.25)' : isFinal ? 'rgba(254,226,226,0.25)' : 'rgba(255,255,255,0.1)';
-                    const typeBorder = isMidterm ? '1px solid rgba(191,219,254,0.4)' : isFinal ? '1px solid rgba(252,165,165,0.4)' : '1px solid rgba(255,255,255,0.2)';
-                    return (
-                      <TableCell key={exam.id} align="center" style={{ fontWeight: 'bold', color: 'white', minWidth: 180 }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75 }}>
-                          {examType && (
-                            <Box
-                              sx={{
-                                px: 1.5,
-                                py: 0.4,
-                                borderRadius: 1.5,
-                                bgcolor: typeBg,
-                                border: typeBorder,
-                                display: 'inline-block',
-                              }}
-                            >
-                              <Typography variant="caption" sx={{ fontWeight: 800, color: 'white', fontSize: '0.65rem', letterSpacing: '0.04em' }}>
-                                {examType.toUpperCase()}
-                              </Typography>
-                            </Box>
-                          )}
-                          <Typography variant="body2" fontWeight={800} sx={{ color: 'white', lineHeight: 1.3 }}>
-                            {exam.title}
-                          </Typography>
-                          <Typography variant="caption" sx={{ opacity: 0.8, color: 'white' }}>
-                            Cap: {exam.totalPoints} pts
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {students.length === 0 ? (
+        {/* ── TAB 3: GRADEBOOK (INSTRUCTOR ONLY) ── */}
+        {activeTab === 3 && isInstructor && (
+          <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden' }}>
+            <Box sx={{ p: 3, borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+              <Box>
+                <Typography variant="h6" fontWeight={900} sx={{ color: '#0f172a' }}>Academic Gradebook</Typography>
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                  Occidental Mindoro State College Base-65 Transmutation Standard (65% Passing = 3.00)
+                </Typography>
+              </Box>
+            </Box>
+
+            <TableContainer sx={{ overflowX: 'auto' }}>
+              <Table sx={{ minWidth: 650 }}>
+                <TableHead sx={{ bgcolor: '#f8fafc' }}>
                   <TableRow>
-                    <TableCell colSpan={2 + rawClassExams.length} align="center" sx={{ py: 4 }}>
-                      <Typography color="text.secondary">No students enrolled to display grades.</Typography>
-                    </TableCell>
+                    <TableCell sx={{ fontWeight: 800, color: '#334155' }}>Student Name</TableCell>
+                    {rawClassExams.map((exam) => (
+                      <TableCell key={exam.id} align="center" sx={{ fontWeight: 800, color: '#334155' }}>
+                        {exam.title} ({exam.totalPoints} pts)
+                      </TableCell>
+                    ))}
                   </TableRow>
-                ) : (
-                  students.map((student) => (
-                    <TableRow key={student.id} hover>
-                      <TableCell sx={{ fontWeight: 'medium' }}>{student.name}</TableCell>
-                      <TableCell>{student.email}</TableCell>
-                      {rawClassExams.map((exam) => {
-                        const attempt = examAttempts.find(
-                          (a) => a.examId === exam.id && a.studentId === student.id
-                        );
-                        if (attempt && attempt.submittedAt && attempt.score !== undefined) {
-                          const { rawPct, transmutedPct, grade, remark, color } = convertToTransmutedOMSCGrade(attempt.score, exam.totalPoints);
-                          const passed = transmutedPct >= 75;
+                </TableHead>
+                <TableBody>
+                  {students.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={rawClassExams.length + 1} align="center" sx={{ py: 4, color: '#64748b' }}>
+                        No enrolled students to record grades for.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    students.map((student) => (
+                      <TableRow key={student.id} hover>
+                        <TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>
+                          {student.name}
+                        </TableCell>
+                        {rawClassExams.map((exam) => {
+                          const attempt = examAttempts.find(
+                            (a) => a.examId === exam.id && a.studentId === student.id && a.submittedAt
+                          );
+                          if (!attempt || attempt.score === undefined) {
+                            return (
+                              <TableCell key={exam.id} align="center" sx={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                                Not submitted
+                              </TableCell>
+                            );
+                          }
+
+                          const result = convertToTransmutedOMSCGrade(attempt.score, exam.totalPoints);
                           return (
                             <TableCell key={exam.id} align="center">
-                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                                <Typography variant="body2" fontWeight="bold">
-                                  {attempt.score} / {exam.totalPoints}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  Raw: {rawPct.toFixed(1)}%
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-                                  Transmuted: {transmutedPct.toFixed(1)}%
-                                </Typography>
-                                <Chip
-                                  label={`${grade} — ${remark}`}
-                                  size="small"
-                                  sx={{ bgcolor: 'white', border: '1px solid', borderColor: color, color: color, fontWeight: 'bold', mt: 0.5, fontSize: '0.7rem' }}
-                                />
-                                <Chip
-                                  label={passed ? 'PASSED' : 'FAILED'}
-                                  size="small"
-                                  sx={{
-                                    bgcolor: passed ? '#dcfce7' : '#fee2e2',
-                                    color: passed ? '#166534' : '#991b1b',
-                                    border: `1px solid ${passed ? '#86efac' : '#fca5a5'}`,
-                                    fontWeight: 800,
-                                    fontSize: '0.62rem',
-                                  }}
-                                />
-                              </Box>
+                              <Chip
+                                label={`${attempt.score}/${exam.totalPoints} • Grade ${result.grade}`}
+                                size="small"
+                                sx={{ bgcolor: result.bg, color: result.color, fontWeight: 800, fontSize: '0.72rem' }}
+                              />
                             </TableCell>
                           );
-                        }
-                        return (
-                          <TableCell key={exam.id} align="center" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                              <Typography variant="caption" color="text.disabled">—</Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.72rem' }}>Not Submitted</Typography>
-                            </Box>
-                          </TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Box>
-      )}
+                        })}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
 
-      {/* View Material Dialog */}
-      <Dialog open={!!viewMaterial} onClose={() => setViewMaterial(null)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ background: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)', color: 'white', fontWeight: 'bold' }}>
-          {viewMaterial?.name}
-        </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            This is a preview of the uploaded material. In a production system, this would display the actual file content.
+        {/* Preview Document Dialog */}
+        <Dialog open={Boolean(viewMaterial)} onClose={() => setViewMaterial(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+          <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>
+            {viewMaterial?.name}
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.6 }}>
+              {viewMaterial?.content}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setViewMaterial(null)} sx={{ fontWeight: 700 }}>Close</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Document Confirmation */}
+        <Dialog open={Boolean(deleteConfirm)} onClose={() => setDeleteConfirm(null)}>
+          <DialogTitle sx={{ fontWeight: 800 }}>Confirm Removal</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Are you sure you want to remove this course document?
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button color="error" variant="contained" onClick={() => deleteConfirm && handleDeleteMaterial(deleteConfirm)}>
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Toast */}
+        <Snackbar open={copyToast} autoHideDuration={3000} onClose={() => setCopyToast(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+          <Alert severity="success" onClose={() => setCopyToast(false)} sx={{ fontWeight: 700, borderRadius: 2.5 }}>
+            Class Code <strong>{classroom.classCode}</strong> copied to clipboard!
           </Alert>
-          <Typography variant="body2" sx={{ lineHeight: 1.8 }}>
-            {viewMaterial?.content}
-          </Typography>
-          <Box sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
-            <Typography variant="caption" color="text.secondary" display="block">
-              <strong>File name:</strong> {viewMaterial?.name}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              <strong>File size:</strong> {viewMaterial ? formatFileSize(viewMaterial.size) : ''}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              <strong>Uploaded by:</strong> {viewMaterial?.uploadedBy}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              <strong>Date:</strong> {viewMaterial ? new Date(viewMaterial.uploadedAt).toLocaleString() : ''}
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setViewMaterial(null)} variant="contained">Close</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Delete Material Confirm Dialog */}
-      <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} maxWidth="xs" fullWidth>
-        <DialogTitle fontWeight="bold">Delete Material?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            This will permanently remove the material from the classroom. Students will no longer be able to access it.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={() => deleteConfirm && handleDeleteMaterial(deleteConfirm)}>
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Container>
+        </Snackbar>
+      </Container>
+    </Box>
   );
 }

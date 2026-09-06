@@ -33,6 +33,8 @@ interface AuthContextType {
   deleteExamFromRepository: (examId: string) => void;
   addClassroomMaterial: (classroomId: string, material: any) => void;
   deleteClassroomMaterial: (classroomId: string, materialId: string) => void;
+  archiveClassroom: (classroomId: string) => void;
+  unarchiveClassroom: (classroomId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -385,6 +387,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const deleteExamFromRepository = (examId: string) => {
     setSavedExams((prev) => prev.filter((e) => e.id !== examId));
+    setExams((prev) => prev.filter((e) => e.id !== examId && e.sourceExamId !== examId));
+  };
+
+  const archiveClassroom = (classroomId: string) => {
+    setClassrooms((prev) =>
+      prev.map((c) => (c.id === classroomId ? { ...c, isArchived: true } : c))
+    );
+  };
+
+  const unarchiveClassroom = (classroomId: string) => {
+    setClassrooms((prev) =>
+      prev.map((c) => (c.id === classroomId ? { ...c, isArchived: false } : c))
+    );
   };
 
   const assignExamToClassroom = (examId: string, classroomId: string, postDate: string, dueDate: string) => {
@@ -472,6 +487,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         deleteExamFromRepository,
         addClassroomMaterial,
         deleteClassroomMaterial,
+        archiveClassroom,
+        unarchiveClassroom,
       }}
     >
       {children}

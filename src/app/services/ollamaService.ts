@@ -214,6 +214,60 @@ function extractQuestionsFromParsedJson(parsed: any): any[] {
 }
 
 /**
+ * Difficulty prompt guidance defining cognitive depth based on Bloom's Taxonomy.
+ */
+export interface DifficultyDirective {
+  levelLabel: string;
+  instructions: string;
+  stemLengthRule: string;
+}
+
+export function getDifficultyPromptDirective(difficulty: string): DifficultyDirective {
+  const diff = (difficulty || 'medium').toLowerCase();
+
+  if (diff === 'hard') {
+    return {
+      levelLabel: 'HARD / SYNTHESIS & EVALUATION (Bloom\'s Higher-Order Thinking)',
+      instructions: `CRITICAL INSTRUCTION - ALL QUESTIONS MUST BE ACADEMICALLY RIGOROUS, HIGH DIFFICULTY, AND COGNITIVELY CHALLENGING:
+- Use scenario-based problems, real-world case studies, edge cases, subtle bug diagnostics, multi-step reasoning, or architectural trade-offs.
+- STRICTLY FORBIDDEN: Do NOT generate trivial recall, simple definitions, or basic terminology questions (e.g., avoid "What does X stand for?" or "What year was Y born?").
+- Multiple Choice questions MUST have 4 plausible, nuanced choices where distractors represent common misconceptions or subtle errors that require deep understanding to reject.
+- Short Answer / Essay questions must require critical evaluation, comparative analysis, and justification of methods.`,
+      stemLengthRule: `Question stems must be detailed and contextual (20 to 50 words). Choices must be substantial phrases or complete concepts (not simple one-word answers).`,
+    };
+  }
+
+  if (diff === 'easy') {
+    return {
+      levelLabel: 'EASY / KNOWLEDGE & RECALL (Bloom\'s Foundational Level)',
+      instructions: `Questions should focus on fundamental terminology, core definitions, basic concepts, and direct factual recall.
+- Ensure stems are clear, direct, and unambiguous.
+- Distractors should be distinct and easily identifiable for someone who studied the basics.`,
+      stemLengthRule: `Keep question stems direct and straightforward (10 to 20 words). Choices should be clear and concise.`,
+    };
+  }
+
+  if (diff === 'mixed') {
+    return {
+      levelLabel: 'MIXED PROPORTIONAL (Bloom\'s Full Spectrum: 30% Recall, 40% Application, 30% Synthesis)',
+      instructions: `Distribute question complexity across cognitive levels:
+- Include foundational knowledge items, procedural application items, and advanced analytical scenario items.
+- Ensure higher-numbered items feature realistic multi-step problem solving.`,
+      stemLengthRule: `Vary question stems from concise conceptual queries to multi-line scenario problems.`,
+    };
+  }
+
+  // Default: medium
+  return {
+    levelLabel: 'MEDIUM / APPLICATION & ANALYSIS (Bloom\'s Intermediate Level)',
+    instructions: `Questions should focus on practical application of principles, analyzing relationships, comparing methods, and predicting procedural outcomes.
+- Avoid both overly trivial recall questions and excessively arcane edge cases.
+- Emphasize practical understanding, realistic use cases, and distinguishing between similar concepts.`,
+    stemLengthRule: `Stems should provide sufficient context (15 to 35 words). Choices should represent realistic alternatives.`,
+  };
+}
+
+/**
  * Sends a structured generation request to local Ollama API for Exams/Quizzes using fast streaming.
  */
 export async function generateExamWithOllama(params: ExamGenerationParams): Promise<any[]> {
@@ -229,30 +283,98 @@ export async function generateExamWithOllama(params: ExamGenerationParams): Prom
   const promptTextRaw = params.generationPrompt?.trim() || '';
   const primaryTopic = promptTextRaw || (params.topics && params.topics.find((t) => t && t !== 'General Subject Matter')) || 'General Subject';
 
-  const systemPrompt = `You are an ultra-fast exam authoring assistant. Create questions strictly about: "${primaryTopic}".
-Keep stems under 10 words and choices under 4 words. Respond ONLY with compact raw JSON.`;
+  const diffDirective = getDifficultyPromptDirective(params.difficulty);
 
-  const promptText = `Generate an exam about "${primaryTopic}".
-Quantities required:
-- Multiple choice (4 short options): ${params.mcCount} questions
-- True/False: ${params.tfCount} questions
-- Short Answer: ${params.saCount} questions
-- Essay: ${params.essayCount} questions
-- Anti-cheat items (isExtra: true): ${params.extraCount} questions
+  // Build explicit type quotas and schema examples based on user's exact requested quantities
+  const typeRequirements: string[] = [];
+  const schemaExamples: any[] = [];
 
-${params.uploadedText ? `Context: ${params.uploadedText.substring(0, 500)}\n` : ''}
+  if (params.mcCount > 0) {
+    typeRequirements.push(`${params.mcCount} Multiple-Choice questions (type: "multiple-choice")`);
+    schemaExamples.push({
+      t: "multiple-choice",
+      q: `Sample scenario or question about ${primaryTopic}?`,
+      o: ["Plausible Option A", "Plausible Option B", "Plausible Option C", "Plausible Option D"],
+      a: 0,
+      points: 2,
+      e: false
+    });
+  }
 
-Respond ONLY with valid JSON matching this exact structure:
+  if (params.tfCount > 0) {
+    typeRequirements.push(`${params.tfCount} True/False questions (type: "true-false")`);
+    schemaExamples.push({
+      t: "true-false",
+      q: `Conceptual statement regarding ${primaryTopic} that is either factual or false.`,
+      o: ["True", "False"],
+      a: "true",
+      points: 1,
+      e: false
+    });
+  }
+
+  if (params.saCount > 0) {
+    typeRequirements.push(`${params.saCount} Short-Answer questions (type: "short-answer")`);
+    schemaExamples.push({
+      t: "short-answer",
+      q: `Direct question requiring a specific key term, author, command, or concise concept about ${primaryTopic}?`,
+      o: [],
+      a: "Specific accurate key term or concise answer phrase",
+      points: 3,
+      e: false
+    });
+  }
+
+  if (params.essayCount > 0) {
+    typeRequirements.push(`${params.essayCount} Essay / Long-Response questions (type: "essay")`);
+    schemaExamples.push({
+      t: "essay",
+      q: `Analyze and critically evaluate the historical significance, mechanisms, or systemic impacts of ${primaryTopic}.`,
+      o: [],
+      a: "Expected key analytical arguments, historical context, and evaluation criteria required for full credit",
+      points: 5,
+      e: false
+    });
+  }
+
+  if (params.extraCount > 0) {
+    typeRequirements.push(`${params.extraCount} Extra Anti-Cheat items (isExtra: true)`);
+  }
+
+  if (schemaExamples.length === 0) {
+    schemaExamples.push({
+      t: "multiple-choice",
+      q: `Question about ${primaryTopic}?`,
+      o: ["Option A", "Option B", "Option C", "Option D"],
+      a: 0,
+      points: 2,
+      e: false
+    });
+  }
+
+  const systemPrompt = `You are an expert examination author and university professor creating an exam strictly on: "${primaryTopic}".
+Target Difficulty: ${diffDirective.levelLabel}
+${diffDirective.instructions}
+${diffDirective.stemLengthRule}
+CRITICAL: You MUST generate all requested question types: multiple-choice, true-false, short-answer, and essay.
+For short-answer questions, the "a" field MUST be the expected text answer statement (e.g. a key term or phrase, NOT a number).
+For essay questions, the "a" field MUST be the evaluation rubric or key expected analytical points (NOT a number).
+Respond ONLY with raw, valid JSON.`;
+
+  const promptText = `Generate a ${params.difficulty.toUpperCase()} difficulty exam strictly based on: "${primaryTopic}".
+Difficulty Target: ${diffDirective.levelLabel}
+Rules:
+${diffDirective.instructions}
+${diffDirective.stemLengthRule}
+
+MANDATORY QUESTION TYPE QUANTITIES (YOU MUST INCLUDE ALL REQUESTED TYPES):
+${typeRequirements.map((r) => `- ${r}`).join('\n')}
+
+${params.uploadedText ? `Context & Source Material:\n${params.uploadedText.substring(0, 1200)}\n` : ''}
+
+Respond ONLY with valid JSON matching this schema:
 {
-  "questions": [
-    {
-      "q": "What is a core principle of ${primaryTopic}?",
-      "o": ["Choice A", "Choice B", "Choice C", "Choice D"],
-      "a": 0,
-      "t": "multiple-choice",
-      "e": false
-    }
-  ]
+  "questions": ${JSON.stringify(schemaExamples, null, 2)}
 }`;
 
   let rawQuestions: any[] = [];
@@ -278,11 +400,11 @@ Respond ONLY with valid JSON matching this exact structure:
           format: 'json',
           keep_alive: '15m',
           options: {
-            num_ctx: 1024,
-            num_predict: 450,
-            temperature: 0.0,
-            top_k: 10,
-            top_p: 0.5,
+            num_ctx: 2048,
+            num_predict: Math.min(2048, Math.max(900, totalQuestions * 200)),
+            temperature: params.difficulty === 'hard' ? 0.35 : params.difficulty === 'easy' ? 0.05 : 0.2,
+            top_k: 20,
+            top_p: 0.8,
           },
         }),
       });
@@ -329,10 +451,23 @@ Respond ONLY with valid JSON matching this exact structure:
     rawQuestions = buildTopicDrivenQuestions(params as any);
   }
 
+  // Build target question type quotas to ensure user's requested types are strictly fulfilled
+  const targetTypes: { type: string; isExtra: boolean; defaultPoints: number }[] = [];
+  for (let i = 0; i < params.mcCount; i++) targetTypes.push({ type: 'multiple-choice', isExtra: false, defaultPoints: 2 });
+  for (let i = 0; i < params.tfCount; i++) targetTypes.push({ type: 'true-false', isExtra: false, defaultPoints: 1 });
+  for (let i = 0; i < params.saCount; i++) targetTypes.push({ type: 'short-answer', isExtra: false, defaultPoints: 3 });
+  for (let i = 0; i < params.essayCount; i++) targetTypes.push({ type: 'essay', isExtra: false, defaultPoints: 5 });
+  for (let i = 0; i < params.extraCount; i++) targetTypes.push({ type: 'multiple-choice', isExtra: true, defaultPoints: 2 });
+
   let idCounter = 1;
-  return rawQuestions.map((q: any) => {
-    const qType = q.t || q.type || q.question_type || 'multiple-choice';
-    const isExtra = Boolean(q.e || q.isExtra || q.is_extra);
+  return rawQuestions.map((q: any, idx: number) => {
+    // Strictly enforce the user's blueprint allocation (MC, TF, SA, Essay)
+    let qType = targetTypes[idx] ? targetTypes[idx].type : (q.t || q.type || q.question_type || '').toLowerCase();
+    if (!['multiple-choice', 'true-false', 'short-answer', 'essay'].includes(qType)) {
+      qType = 'multiple-choice';
+    }
+
+    const isExtra = targetTypes[idx] ? targetTypes[idx].isExtra : Boolean(q.e || q.isExtra || q.is_extra);
     const defaultPoints = qType === 'multiple-choice' ? 2 : qType === 'true-false' ? 1 : qType === 'short-answer' ? 3 : 5;
     const questionStem = q.q || q.question || q.stem || q.text || q.title || `Question about ${primaryTopic}`;
 
@@ -341,7 +476,7 @@ Respond ONLY with valid JSON matching this exact structure:
       type: qType,
       question: questionStem,
       points: Number(q.points || q.score) || defaultPoints,
-      difficulty: params.difficulty,
+      difficulty: q.difficulty || params.difficulty,
       topic: q.topic || primaryTopic,
       image: '',
       isExtra: isExtra,
@@ -365,11 +500,7 @@ Respond ONLY with valid JSON matching this exact structure:
             corr = charCode - 65;
           } else {
             const parsedNum = parseInt(rawAnswer, 10);
-            if (!isNaN(parsedNum)) {
-              corr = parsedNum >= 1 && parsedNum <= formattedItem.options.length ? parsedNum - 1 : 0;
-            } else {
-              corr = 0;
-            }
+            corr = !isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= formattedItem.options.length ? parsedNum - 1 : 0;
           }
         } else {
           corr = 0;
@@ -379,9 +510,31 @@ Respond ONLY with valid JSON matching this exact structure:
       formattedItem.optionsImages = ['', '', '', ''];
     } else if (qType === 'true-false') {
       const corrStr = String(rawAnswer !== undefined ? rawAnswer : 'true').toLowerCase();
-      formattedItem.correctAnswer = corrStr.includes('false') || corrStr === '0' || corrStr === 'f' ? 'false' : 'true';
+      formattedItem.correctAnswer = corrStr.includes('false') || corrStr === 'f' ? 'false' : 'true';
+      formattedItem.options = ['True', 'False'];
+    } else if (qType === 'short-answer') {
+      let ansText = String(rawAnswer !== undefined ? rawAnswer : '').trim();
+      // Clean up artifact if LLM returned 0, 1, 2, 3 as an index from an MC template
+      if (!ansText || ansText === '0' || ansText === '1' || ansText === '2' || ansText === '3') {
+        const idxOpt = Number(ansText);
+        if (Array.isArray(rawOptions) && rawOptions.length > 0 && !isNaN(idxOpt) && rawOptions[idxOpt]) {
+          ansText = rawOptions[idxOpt];
+        } else if (Array.isArray(rawOptions) && rawOptions.length > 0) {
+          ansText = rawOptions[0];
+        } else {
+          ansText = `Key principles and terminology regarding ${primaryTopic}`;
+        }
+      }
+      formattedItem.correctAnswer = ansText;
+      formattedItem.options = [];
     } else {
-      formattedItem.correctAnswer = String(rawAnswer !== undefined ? rawAnswer : 'Answer key');
+      // essay
+      let ansText = String(rawAnswer !== undefined ? rawAnswer : '').trim();
+      if (!ansText || ansText === '0' || ansText === '1' || ansText === '2' || ansText === '3') {
+        ansText = `Expected analytical response discussing core concepts, causal mechanisms, and practical implications of ${primaryTopic}.`;
+      }
+      formattedItem.correctAnswer = ansText;
+      formattedItem.options = [];
     }
 
     return formattedItem;
@@ -400,18 +553,25 @@ export async function regenerateQuestionWithOllama(
   const userUrl = baseUrl.replace(/\/$/, '');
   const endpointsToTry = Array.from(new Set([userUrl, 'http://localhost:11434', 'http://127.0.0.1:11434']));
   const topic = questionItem.topic || 'Subject Matter';
+  const itemDiff = questionItem.difficulty || 'medium';
+  const diffDirective = getDifficultyPromptDirective(itemDiff);
 
-  const systemPrompt = `You are a quiz authoring AI assistant. Return ONLY a JSON object strictly about the topic "${topic}".`;
+  const systemPrompt = `You are an expert examination author AI assistant. Revise the question strictly for topic "${topic}".
+Difficulty: ${diffDirective.levelLabel}
+${diffDirective.instructions}
+${diffDirective.stemLengthRule}
+Return ONLY a valid JSON object.`;
   
   const userPrompt = `Revise this question (${mode} mode) strictly about "${topic}" in JSON format:
-Question: "${questionItem.question}"
+Difficulty Target: ${itemDiff.toUpperCase()} (${diffDirective.levelLabel})
+Current Question: "${questionItem.question}"
 Type: ${questionItem.type}
 Topic: ${topic}
 
 Respond with JSON:
 {
-  "question": "Revised question stem strictly about ${topic}",
-  "options": ["Choice A", "Choice B", "Choice C", "Choice D"],
+  "question": "Revised question stem adhering strictly to ${itemDiff} difficulty",
+  "options": ["Plausible Choice A", "Plausible Choice B", "Plausible Choice C", "Plausible Choice D"],
   "correctAnswer": 0
 }`;
 
@@ -434,9 +594,9 @@ Respond with JSON:
           stream: false,
           format: 'json',
           options: {
-            num_ctx: 1024,
-            num_predict: 300,
-            temperature: 0.0,
+            num_ctx: 2048,
+            num_predict: 400,
+            temperature: itemDiff === 'hard' ? 0.35 : 0.1,
           },
         }),
       });
@@ -483,13 +643,19 @@ export async function generateReviewerWithOllama(params: ReviewerGenerationParam
     ? `Subject: "${params.subject}". Focus: "${params.customInstructions.trim()}"`
     : `Subject: "${params.subject}"`;
 
-  const systemPrompt = `You are a learning content authoring AI strictly creating study modules for: ${topicPrompt}.
-Keep lesson content brief (3 bullet points max) and question stems concise (max 10 words). Respond ONLY with valid JSON.`;
+  const diffDirective = getDifficultyPromptDirective(params.difficulty === 'normal' ? 'medium' : params.difficulty);
 
-  const userPrompt = `Create a study reviewer strictly based on: ${topicPrompt}.
+  const systemPrompt = `You are an expert learning content authoring AI strictly creating study modules for: ${topicPrompt}.
+Difficulty: ${diffDirective.levelLabel}
+${diffDirective.instructions}
+Respond ONLY with valid JSON.`;
+
+  const userPrompt = `Create a comprehensive study reviewer strictly based on: ${topicPrompt}.
+Difficulty Target: ${params.difficulty.toUpperCase()} (${diffDirective.levelLabel})
 Create exactly ${targetCount} modules with ${itemsCount} questions per module.
+Ensure the lesson content and module questions thoroughly reflect ${params.difficulty} difficulty level.
 
-${params.uploadedText ? `Reference Material: ${params.uploadedText.substring(0, 1000)}\n` : ''}
+${params.uploadedText ? `Reference Material: ${params.uploadedText.substring(0, 1200)}\n` : ''}
 
 Respond ONLY with valid JSON:
 {
@@ -497,7 +663,7 @@ Respond ONLY with valid JSON:
     {
       "title": "Module 1: Title",
       "topic": "Topic Name",
-      "lessonContent": "### Module Overview\\n- Point 1\\n- Point 2\\n- Point 3",
+      "lessonContent": "### Module Overview\\n- Detailed Point 1\\n- Detailed Point 2\\n- Detailed Point 3",
       "questions": [
         {
           "type": "multiple-choice",
@@ -534,11 +700,11 @@ Respond ONLY with valid JSON:
           format: 'json',
           keep_alive: '15m',
           options: {
-            num_ctx: 1024,
-            num_predict: 550,
-            temperature: 0.0,
-            top_k: 10,
-            top_p: 0.5,
+            num_ctx: 2048,
+            num_predict: Math.min(2048, Math.max(900, targetCount * itemsCount * 90)),
+            temperature: params.difficulty === 'hard' ? 0.3 : 0.1,
+            top_k: 20,
+            top_p: 0.8,
           },
         }),
       });

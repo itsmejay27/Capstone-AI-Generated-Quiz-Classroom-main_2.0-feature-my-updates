@@ -147,8 +147,9 @@ export default function RootLayout() {
             position="sticky"
             elevation={0}
             sx={{
-              background: 'linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%)',
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 60%, #1e3a8a 100%)',
               borderBottom: '1px solid rgba(255,255,255,0.1)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
             }}
           >
             <Toolbar sx={{ maxWidth: '100%', width: '100%', mx: 'auto', px: { xs: 2, sm: 3, md: 5, lg: 6 } }}>

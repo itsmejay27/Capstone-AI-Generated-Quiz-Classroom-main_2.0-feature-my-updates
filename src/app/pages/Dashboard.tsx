@@ -3,11 +3,9 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import {
   Container,
-  Grid,
   Button,
   Typography,
   Box,
-  Fab,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -16,33 +14,63 @@ import {
   Chip,
   Paper,
   Avatar,
+  Tooltip,
+  Snackbar,
+  Alert,
+  InputAdornment,
+  IconButton,
+  Menu,
+  MenuItem,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   Add,
   People,
   Code,
   School,
-  AutoAwesome,
   Quiz,
   ArrowForward,
-  LibraryBooks,
-  MenuBook,
+  ContentCopy,
+  Search,
+  MoreVert,
+  Archive,
+  Unarchive,
+  FolderOpen,
 } from '@mui/icons-material';
 
-const CARD_GRADIENTS = [
-  { bg: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)', shadow: 'rgba(30,58,138,0.35)', accent: '#60a5fa' },
-  { bg: 'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 100%)', shadow: 'rgba(76,29,149,0.35)', accent: '#a78bfa' },
-  { bg: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)', shadow: 'rgba(6,95,70,0.35)', accent: '#34d399' },
-  { bg: 'linear-gradient(135deg, #7c2d12 0%, #f97316 100%)', shadow: 'rgba(124,45,18,0.35)', accent: '#fb923c' },
-  { bg: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%)', shadow: 'rgba(3,105,161,0.35)', accent: '#38bdf8' },
-  { bg: 'linear-gradient(135deg, #6b21a8 0%, #d946ef 100%)', shadow: 'rgba(107,33,168,0.35)', accent: '#e879f9' },
+// Classic Google Classroom card themes
+const CLASS_THEMES = [
+  { headerBg: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)', badgeBg: '#dbeafe', badgeColor: '#1e40af' },
+  { headerBg: 'linear-gradient(135deg, #5b21b6 0%, #8b5cf6 100%)', badgeBg: '#ede9fe', badgeColor: '#5b21b6' },
+  { headerBg: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)', badgeBg: '#d1fae5', badgeColor: '#065f46' },
+  { headerBg: 'linear-gradient(135deg, #9a3412 0%, #f97316 100%)', badgeBg: '#ffedd5', badgeColor: '#9a3412' },
+  { headerBg: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)', badgeBg: '#cffafe', badgeColor: '#0e7490' },
+  { headerBg: 'linear-gradient(135deg, #86198f 0%, #d946ef 100%)', badgeBg: '#fae8ff', badgeColor: '#86198f' },
 ];
 
 export default function Dashboard() {
-  const { currentUser, classrooms, addClassroom, joinClassroom } = useAuth();
+  const {
+    currentUser,
+    users,
+    classrooms,
+    addClassroom,
+    joinClassroom,
+    exams,
+    savedExams,
+    archiveClassroom,
+    unarchiveClassroom,
+  } = useAuth();
   const navigate = useNavigate();
+
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openJoinDialog, setOpenJoinDialog] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [classroomTab, setClassroomTab] = useState<'active' | 'archived'>('active');
+
+  // Menu anchor for classroom card actions
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedClassroomId, setSelectedClassroomId] = useState<string | null>(null);
 
   const [className, setClassName] = useState('');
   const [subject, setSubject] = useState('');
@@ -50,12 +78,43 @@ export default function Dashboard() {
   const [description, setDescription] = useState('');
   const [classCode, setClassCode] = useState('');
 
+  const [copySnackbar, setCopySnackbar] = useState({ open: false, code: '' });
+
   const isInstructor = currentUser?.role === 'instructor';
+
+  // Filter classrooms by user role
   const userClassrooms = classrooms.filter((classroom) =>
     isInstructor
       ? classroom.instructorId === currentUser?.id
       : classroom.students.includes(currentUser?.id || '')
   );
+
+  const activeClassrooms = userClassrooms.filter((c) => !c.isArchived);
+  const archivedClassrooms = userClassrooms.filter((c) => c.isArchived === true);
+
+  const currentList = classroomTab === 'active' ? activeClassrooms : archivedClassrooms;
+
+  const filteredClassrooms = currentList.filter((classroom) => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      classroom.name.toLowerCase().includes(query) ||
+      classroom.subject.toLowerCase().includes(query) ||
+      classroom.section.toLowerCase().includes(query) ||
+      classroom.classCode.toLowerCase().includes(query)
+    );
+  });
+
+  // Calculate accurate exam count
+  // For Instructor: reads directly from savedExams (Exam Repository) so deleting an exam decreases the count immediately!
+  // For Student: reads assigned exams for enrolled classrooms
+  const totalExamsCount = isInstructor
+    ? savedExams
+      ? savedExams.length
+      : 0
+    : exams
+    ? exams.filter((e) => userClassrooms.some((c) => c.id === e.classroomId)).length
+    : 0;
 
   const handleCreateClassroom = () => {
     if (!className || !subject || !section) return;
@@ -69,9 +128,13 @@ export default function Dashboard() {
       students: [],
       createdAt: new Date().toISOString(),
       description,
+      isArchived: false,
     };
     addClassroom(newClassroom);
-    setClassName(''); setSubject(''); setSection(''); setDescription('');
+    setClassName('');
+    setSubject('');
+    setSection('');
+    setDescription('');
     setOpenCreateDialog(false);
   };
 
@@ -79,7 +142,9 @@ export default function Dashboard() {
     const studentId = currentUser?.id || '';
     const success = joinClassroom(classCode, studentId);
     if (success) {
-      const targetClass = classrooms.find((c) => c.classCode.toLowerCase() === classCode.trim().toLowerCase());
+      const targetClass = classrooms.find(
+        (c) => c.classCode.toLowerCase() === classCode.trim().toLowerCase()
+      );
       if (targetClass) navigate(`/classroom/${targetClass.id}`);
     } else {
       alert('Invalid Class Code. Please check the code and try again.');
@@ -88,28 +153,55 @@ export default function Dashboard() {
     setClassCode('');
   };
 
-  const initials = currentUser?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
+  const handleCopyCode = (e: React.MouseEvent, code: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(code);
+    setCopySnackbar({ open: true, code });
+  };
+
+  const handleOpenMenu = (e: React.MouseEvent<HTMLElement>, classroomId: string) => {
+    e.stopPropagation();
+    setMenuAnchorEl(e.currentTarget);
+    setSelectedClassroomId(classroomId);
+  };
+
+  const handleCloseMenu = () => {
+    setMenuAnchorEl(null);
+    setSelectedClassroomId(null);
+  };
+
+  const handleToggleArchive = (classroomId: string, isArchived: boolean) => {
+    if (isArchived) {
+      unarchiveClassroom(classroomId);
+    } else {
+      archiveClassroom(classroomId);
+    }
+    handleCloseMenu();
+  };
+
+  const initials = currentUser?.name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f0f4f8' }}>
-      {/* ── Hero Banner ── */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 70%, #0288d1 100%)',
-          pt: { xs: 4, md: 6 },
-          pb: { xs: 8, md: 10 },
-          px: 3,
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Decorative orbs */}
-        <Box sx={{ position: 'absolute', top: -60, right: -60, width: 260, height: 260, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', pointerEvents: 'none' }} />
-        <Box sx={{ position: 'absolute', bottom: -40, left: '30%', width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
-        <Box sx={{ position: 'absolute', top: '20%', left: -30, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
-
-        <Container maxWidth="xl" sx={{ px: { xs: 2, sm: 3, md: 5, lg: 6 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5, mb: 3 }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc', py: 4, px: { xs: 2, sm: 4, md: 6 } }}>
+      <Container maxWidth="xl">
+        {/* ── Top Header Banner ── */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 3, md: 4 },
+            borderRadius: 4,
+            bgcolor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+            mb: 4,
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: { xs: 'flex-start', md: 'center' },
+            justifyContent: 'space-between',
+            gap: 3,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5 }}>
             <Avatar
               src={currentUser?.avatar}
               sx={{
@@ -117,382 +209,463 @@ export default function Dashboard() {
                 height: 64,
                 fontSize: '1.4rem',
                 fontWeight: 800,
-                background: 'rgba(255,255,255,0.25)',
-                border: '2px solid rgba(255,255,255,0.4)',
-                backdropFilter: 'blur(10px)',
+                bgcolor: isInstructor ? '#7c3aed' : '#2563eb',
                 color: 'white',
               }}
             >
               {initials}
             </Avatar>
             <Box>
-              <Typography
-                variant="h4"
-                fontWeight={800}
-                sx={{ color: 'white', letterSpacing: '-0.02em', lineHeight: 1.2, fontSize: { xs: '1.5rem', md: '2rem' } }}
-              >
-                Welcome back, {currentUser?.name}!
-              </Typography>
-              <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.5, fontSize: '0.95rem' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Typography variant="h5" fontWeight={900} sx={{ color: '#0f172a' }}>
+                  Welcome back, {currentUser?.name}!
+                </Typography>
+                <Chip
+                  label={isInstructor ? 'INSTRUCTOR' : 'STUDENT'}
+                  size="small"
+                  sx={{
+                    bgcolor: isInstructor ? '#f5f3ff' : '#eff6ff',
+                    color: isInstructor ? '#6d28d9' : '#1d4ed8',
+                    fontWeight: 800,
+                    fontSize: '0.65rem',
+                    height: 22,
+                  }}
+                />
+              </Box>
+              <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
                 {isInstructor
-                  ? 'Manage your classrooms and create AI-powered examinations'
-                  : 'View your enrolled classes, study with AI Reviewers, and take assessments'}
+                  ? 'Manage your classrooms, create AI exams, and view student submissions.'
+                  : 'Access your enrolled classrooms, study materials, and take assessments.'}
               </Typography>
             </Box>
           </Box>
 
-          {/* Quick action buttons */}
-          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
             {isInstructor ? (
               <>
                 <Button
-                  variant="contained"
+                  variant="outlined"
                   startIcon={<Quiz />}
                   onClick={() => navigate('/exam-generator')}
                   sx={{
-                    bgcolor: 'rgba(255,255,255,0.2)',
-                    color: 'white',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    backdropFilter: 'blur(8px)',
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
                     fontWeight: 700,
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
+                    px: 2.5,
+                    py: 1.1,
+                    borderRadius: 2.5,
+                    textTransform: 'none',
+                    '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' },
                   }}
                 >
                   AI Exam Generator
                 </Button>
                 <Button
                   variant="contained"
-                  startIcon={<LibraryBooks />}
-                  onClick={() => navigate('/exam-repository')}
+                  startIcon={<Add />}
+                  onClick={() => setOpenCreateDialog(true)}
                   sx={{
-                    bgcolor: 'rgba(255,255,255,0.12)',
+                    bgcolor: '#7c3aed',
                     color: 'white',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    backdropFilter: 'blur(8px)',
-                    fontWeight: 600,
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                    fontWeight: 800,
+                    px: 3,
+                    py: 1.1,
+                    borderRadius: 2.5,
+                    textTransform: 'none',
+                    boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
+                    '&:hover': { bgcolor: '#6d28d9' },
                   }}
                 >
-                  Exam Repository
+                  Create Classroom
                 </Button>
               </>
             ) : (
-              <>
-                <Button
-                  variant="contained"
-                  startIcon={<AutoAwesome />}
-                  onClick={() => navigate('/reviewer-generator')}
-                  sx={{
-                    bgcolor: 'rgba(255,255,255,0.2)',
-                    color: 'white',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    backdropFilter: 'blur(8px)',
-                    fontWeight: 700,
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
-                  }}
-                >
-                  AI Reviewer
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<MenuBook />}
-                  onClick={() => navigate('/reviewer')}
-                  sx={{
-                    bgcolor: 'rgba(255,255,255,0.12)',
-                    color: 'white',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    backdropFilter: 'blur(8px)',
-                    fontWeight: 600,
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
-                  }}
-                >
-                  My Reviewers
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<Add />}
-                  onClick={() => setOpenJoinDialog(true)}
-                  sx={{
-                    bgcolor: 'rgba(255,255,255,0.12)',
-                    color: 'white',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    backdropFilter: 'blur(8px)',
-                    fontWeight: 600,
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
-                  }}
-                >
-                  Join Class
-                </Button>
-              </>
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => setOpenJoinDialog(true)}
+                sx={{
+                  bgcolor: '#2563eb',
+                  color: 'white',
+                  fontWeight: 800,
+                  px: 3,
+                  py: 1.1,
+                  borderRadius: 2.5,
+                  textTransform: 'none',
+                  boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+                  '&:hover': { bgcolor: '#1d4ed8' },
+                }}
+              >
+                Join Classroom
+              </Button>
             )}
           </Box>
-        </Container>
-      </Box>
+        </Paper>
 
-      {/* ── Stats bar ── */}
-      <Container maxWidth="xl" sx={{ mt: -4, mb: 4, position: 'relative', zIndex: 1, px: { xs: 2, sm: 3, md: 5, lg: 6 } }}>
-        <Paper
-          elevation={0}
+        {/* ── 3-Metric Summary Cards ── */}
+        <Box
           sx={{
-            borderRadius: 3,
-            p: { xs: 2, md: 2.5 },
-            display: 'flex',
-            gap: { xs: 2, md: 4 },
-            flexWrap: 'wrap',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
-            background: 'white',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+            gap: 3,
+            mb: 4,
+            width: '100%',
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Box sx={{ width: 40, height: 40, borderRadius: 2, bgcolor: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <School sx={{ color: '#1565c0', fontSize: 22 }} />
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              borderRadius: 3.5,
+              bgcolor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <School sx={{ color: '#2563eb', fontSize: 26 }} />
             </Box>
             <Box>
-              <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1 }}>{userClassrooms.length}</Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                {isInstructor ? 'Classes Created' : 'Enrolled Classes'}
+              <Typography variant="h5" fontWeight={900} sx={{ color: '#0f172a', lineHeight: 1 }}>
+                {activeClassrooms.length}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, mt: 0.5, display: 'block' }}>
+                {isInstructor ? 'Active Classrooms' : 'Enrolled Classes'}
               </Typography>
             </Box>
-          </Box>
+          </Paper>
 
-          <Box sx={{ width: '1px', bgcolor: '#e2e8f0', flexShrink: 0 }} />
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Box sx={{ width: 40, height: 40, borderRadius: 2, bgcolor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <People sx={{ color: '#7c3aed', fontSize: 22 }} />
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              borderRadius: 3.5,
+              bgcolor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <People sx={{ color: '#7c3aed', fontSize: 26 }} />
             </Box>
             <Box>
-              <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1 }}>
+              <Typography variant="h5" fontWeight={900} sx={{ color: '#0f172a', lineHeight: 1 }}>
                 {isInstructor
-                  ? userClassrooms.reduce((sum, c) => sum + c.students.length, 0)
-                  : userClassrooms.length}
+                  ? activeClassrooms.reduce((sum, c) => sum + (c.students?.length || 0), 0)
+                  : activeClassrooms.length}
               </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={600}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, mt: 0.5, display: 'block' }}>
                 {isInstructor ? 'Total Students' : 'Active Classes'}
               </Typography>
             </Box>
-          </Box>
+          </Paper>
 
-          {isInstructor && (
-            <>
-              <Box sx={{ width: '1px', bgcolor: '#e2e8f0', flexShrink: 0 }} />
-              <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
-                <Chip
-                  label="INSTRUCTOR"
-                  sx={{
-                    bgcolor: '#f5f3ff',
-                    color: '#7c3aed',
-                    fontWeight: 800,
-                    fontSize: '0.7rem',
-                    border: '1px solid #ddd6fe',
-                  }}
-                />
-              </Box>
-            </>
-          )}
-        </Paper>
-      </Container>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              borderRadius: 3.5,
+              bgcolor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <Box sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Quiz sx={{ color: '#059669', fontSize: 26 }} />
+            </Box>
+            <Box>
+              <Typography variant="h5" fontWeight={900} sx={{ color: '#0f172a', lineHeight: 1 }}>
+                {totalExamsCount}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, mt: 0.5, display: 'block' }}>
+                {isInstructor ? 'Repository Exams' : 'Available Exams'}
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
 
-      {/* ── My Classrooms ── */}
-      <Container maxWidth="xl" sx={{ pb: 8, px: { xs: 2, sm: 3, md: 5, lg: 6 } }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Box>
-            <Typography variant="h5" fontWeight={800} sx={{ letterSpacing: '-0.01em' }}>
+        {/* ── Classroom Roster Section Header with Active / Archived Tabs ── */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            justifyContent: 'space-between',
+            alignItems: { xs: 'flex-start', md: 'center' },
+            gap: 2,
+            mb: 3,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Typography variant="h6" fontWeight={900} sx={{ color: '#0f172a' }}>
               My Classrooms
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {userClassrooms.length === 0
-                ? 'No classrooms yet — get started below'
-                : `${userClassrooms.length} classroom${userClassrooms.length > 1 ? 's' : ''} available`}
-            </Typography>
-          </Box>
-          {!isInstructor && (
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => setOpenJoinDialog(true)}
-              sx={{ fontWeight: 700 }}
+
+            {/* Active vs Archived Toggle */}
+            <ToggleButtonGroup
+              value={classroomTab}
+              exclusive
+              onChange={(_, val) => val && setClassroomTab(val)}
+              size="small"
+              sx={{
+                bgcolor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 2.5,
+                '& .MuiToggleButton-root': {
+                  px: 2,
+                  py: 0.5,
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  textTransform: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                },
+                '& .Mui-selected': {
+                  bgcolor: '#f1f5f9 !important',
+                  color: '#0f172a !important',
+                  fontWeight: 800,
+                },
+              }}
             >
-              Join Class
-            </Button>
+              <ToggleButton value="active">
+                Active ({activeClassrooms.length})
+              </ToggleButton>
+              <ToggleButton value="archived">
+                <Archive sx={{ fontSize: 14, mr: 0.5 }} /> Archived ({archivedClassrooms.length})
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
+          {currentList.length > 0 && (
+            <TextField
+              placeholder="Search classrooms..."
+              size="small"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search sx={{ fontSize: 20, color: '#94a3b8' }} />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                bgcolor: '#ffffff',
+                minWidth: { xs: '100%', sm: 260 },
+                '& .MuiOutlinedInput-root': { borderRadius: 2.5 },
+              }}
+            />
           )}
         </Box>
 
-        {userClassrooms.length === 0 ? (
+        {/* ── Empty State ── */}
+        {filteredClassrooms.length === 0 ? (
           <Paper
             elevation={0}
             sx={{
               p: 6,
               textAlign: 'center',
               borderRadius: 4,
-              border: '2px dashed #e2e8f0',
-              bgcolor: 'white',
+              border: '2px dashed #cbd5e1',
+              bgcolor: '#ffffff',
             }}
           >
-            <Box sx={{
-              width: 80, height: 80, borderRadius: '50%',
-              bgcolor: '#f0f4f8',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              mx: 'auto', mb: 2,
-            }}>
-              <School sx={{ fontSize: 40, color: '#94a3b8' }} />
-            </Box>
-            <Typography variant="h6" fontWeight={700} gutterBottom>
-              No classrooms yet
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 340, mx: 'auto' }}>
-              {isInstructor
-                ? 'Click the (+) button in the bottom right to create your first class.'
-                : 'Click "Join Class" and enter the class code provided by your instructor.'}
-            </Typography>
-            {isInstructor && (
-              <Button variant="contained" startIcon={<Add />} onClick={() => setOpenCreateDialog(true)}>
-                Create Classroom
-              </Button>
+            {classroomTab === 'active' ? (
+              <>
+                <School sx={{ fontSize: 48, color: '#94a3b8', mb: 1.5 }} />
+                <Typography variant="h6" fontWeight={800} sx={{ color: '#0f172a' }}>
+                  {searchQuery ? 'No matching classroom found' : 'No active classrooms available'}
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mb: 3, maxWidth: 360, mx: 'auto' }}>
+                  {isInstructor
+                    ? 'Click "Create Classroom" above to set up your first class.'
+                    : 'Click "Join Classroom" above and enter your Class Code.'}
+                </Typography>
+                {isInstructor ? (
+                  <Button variant="contained" startIcon={<Add />} onClick={() => setOpenCreateDialog(true)} sx={{ bgcolor: '#7c3aed', fontWeight: 800 }}>
+                    Create Classroom
+                  </Button>
+                ) : (
+                  <Button variant="contained" startIcon={<Add />} onClick={() => setOpenJoinDialog(true)} sx={{ bgcolor: '#2563eb', fontWeight: 800 }}>
+                    Join Classroom
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Archive sx={{ fontSize: 48, color: '#94a3b8', mb: 1.5 }} />
+                <Typography variant="h6" fontWeight={800} sx={{ color: '#0f172a' }}>
+                  No archived classrooms
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', maxWidth: 360, mx: 'auto' }}>
+                  When you archive past semesters or finished courses, they will safely appear here.
+                </Typography>
+              </>
             )}
           </Paper>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-            {userClassrooms.map((classroom, idx) => {
-              const theme = CARD_GRADIENTS[idx % CARD_GRADIENTS.length];
+          /* ── Google Classroom Style Card Grid ── */
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+              gap: 3,
+              width: '100%',
+            }}
+          >
+            {filteredClassrooms.map((classroom, idx) => {
+              const theme = CLASS_THEMES[idx % CLASS_THEMES.length];
+              const instructor = users.find((u) => u.id === classroom.instructorId);
+
               return (
                 <Paper
                   key={classroom.id}
-                  onClick={() => navigate(`/classroom/${classroom.id}`)}
                   elevation={0}
+                  onClick={() => navigate(`/classroom/${classroom.id}`)}
                   sx={{
-                    width: '100%',
-                    minHeight: { md: 110 },
-                    bgcolor: 'white',
-                    borderRadius: 3,
+                    borderRadius: 3.5,
+                    bgcolor: '#ffffff',
                     border: '1px solid #e2e8f0',
-                    borderLeft: `6px solid ${theme.accent}`,
-                    p: 3,
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
+                    overflow: 'hidden',
                     cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%',
+                    boxSizing: 'border-box',
                     transition: 'all 0.2s ease',
                     '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
-                      borderColor: '#cbd5e1',
+                      transform: 'translateY(-3px)',
+                      boxShadow: '0 12px 28px rgba(0,0,0,0.08)',
                     },
-                    display: 'flex',
-                    flexDirection: { xs: 'column', md: 'row' },
-                    alignItems: { xs: 'flex-start', md: 'center' },
-                    justifyContent: 'space-between',
-                    gap: 2.5,
-                    boxSizing: 'border-box',
                   }}
                 >
-                  {/* Left side: Icon + Text Content */}
-                  <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'flex-start', flexGrow: 1, minWidth: 0 }}>
-                    <Box sx={{
-                      width: 46,
-                      height: 46,
-                      borderRadius: 2,
-                      background: theme.bg,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
+                  {/* Google Classroom Style Card Header Banner */}
+                  <Box
+                    sx={{
+                      background: theme.headerBg,
+                      p: 2.5,
                       color: 'white',
-                      boxShadow: `0 4px 12px ${theme.shadow}`,
-                    }}>
-                      <School sx={{ fontSize: 24 }} />
-                    </Box>
-                    <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                      <Typography
-                        variant="h6"
-                        fontWeight={800}
-                        sx={{
-                          color: 'text.primary',
-                          lineHeight: 1.25,
-                          letterSpacing: '-0.01em',
-                          fontSize: '1.05rem',
-                        }}
-                      >
-                        {classroom.name}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, fontSize: '0.78rem', display: 'block', mt: 0.5 }}>
-                        {classroom.subject} &bull; {classroom.section}
-                      </Typography>
-                      {classroom.description && (
+                      position: 'relative',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box sx={{ minWidth: 0, pr: 1 }}>
                         <Typography
-                          variant="body2"
+                          variant="h6"
+                          fontWeight={800}
                           sx={{
-                            color: 'text.secondary',
-                            fontSize: '0.82rem',
-                            lineHeight: 1.5,
-                            mt: 1,
-                            overflow: 'hidden',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
+                            color: 'white',
+                            lineHeight: 1.25,
+                            fontSize: '1.15rem',
+                            mb: 0.5,
+                            noWrap: true,
                           }}
                         >
-                          {classroom.description}
+                          {classroom.name}
                         </Typography>
-                      )}
+                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700, display: 'block' }}>
+                          {classroom.subject} &bull; {classroom.section}
+                        </Typography>
+                        {instructor && (
+                          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.72rem', display: 'block', mt: 0.3 }}>
+                            {instructor.name}
+                          </Typography>
+                        )}
+                      </Box>
+
+                      {/* 3-Dots Menu Button */}
+                      <IconButton
+                        size="small"
+                        onClick={(e) => handleOpenMenu(e, classroom.id)}
+                        sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}
+                      >
+                        <MoreVert sx={{ fontSize: 18 }} />
+                      </IconButton>
                     </Box>
                   </Box>
 
-                  {/* Right side: Chips + Action Arrow */}
-                  <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    flexShrink: 0,
-                    minWidth: { md: '220px' },
-                    width: { xs: '100%', md: 'auto' },
-                    justifyContent: { xs: 'space-between', md: 'flex-end' },
-                    borderTop: { xs: '1px solid #f1f5f9', md: 'none' },
-                    pt: { xs: 1.5, md: 0 },
-                    mt: { xs: 1, md: 0 }
-                  }}>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                      <Chip
-                        icon={<People sx={{ fontSize: '14px !important' }} />}
-                        label={`${classroom.students.length} student${classroom.students.length !== 1 ? 's' : ''}`}
-                        size="small"
+                  {/* Card Content Body */}
+                  <Box sx={{ p: 2.5, flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography
+                        variant="body2"
                         sx={{
-                          bgcolor: '#f8fafc',
-                          color: '#475569',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          border: '1px solid #e2e8f0',
-                          height: 28,
+                          color: '#64748b',
+                          fontSize: '0.82rem',
+                          lineHeight: 1.4,
+                          mb: 2,
+                          minHeight: 36,
+                          overflow: 'hidden',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
                         }}
-                      />
-                      <Chip
-                        icon={<Code sx={{ fontSize: '14px !important' }} />}
-                        label={classroom.classCode}
-                        size="small"
-                        sx={{
-                          bgcolor: '#f8fafc',
-                          color: '#475569',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          border: '1px solid #e2e8f0',
-                          height: 28,
-                        }}
-                      />
+                      >
+                        {classroom.description || 'Click to view classwork, assigned exams, and course materials.'}
+                      </Typography>
+
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <Tooltip title="Click to copy Class Code">
+                          <Chip
+                            icon={<Code sx={{ fontSize: '13px !important' }} />}
+                            label={classroom.classCode}
+                            size="small"
+                            onClick={(e) => handleCopyCode(e, classroom.classCode)}
+                            deleteIcon={<ContentCopy sx={{ fontSize: '12px !important' }} />}
+                            onDelete={(e) => handleCopyCode(e, classroom.classCode)}
+                            sx={{
+                              bgcolor: '#f1f5f9',
+                              color: '#334155',
+                              fontWeight: 800,
+                              fontSize: '0.7rem',
+                              cursor: 'pointer',
+                            }}
+                          />
+                        </Tooltip>
+
+                        {classroom.isArchived && (
+                          <Chip
+                            icon={<Archive sx={{ fontSize: '12px !important' }} />}
+                            label="Archived"
+                            size="small"
+                            sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 800, fontSize: '0.68rem' }}
+                          />
+                        )}
+                      </Box>
                     </Box>
-                    <Box sx={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      bgcolor: '#eff6ff',
-                      color: '#1565c0',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      transition: 'all 0.2s',
-                      '&:hover': {
-                        bgcolor: '#1565c0',
-                        color: 'white',
-                      }
-                    }}>
-                      <ArrowForward sx={{ fontSize: 16 }} />
+
+                    {/* Card Footer */}
+                    <Box
+                      sx={{
+                        pt: 2,
+                        borderTop: '1px solid #f1f5f9',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        mt: 2,
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <People sx={{ fontSize: 16 }} /> {classroom.students?.length || 0} student{(classroom.students?.length || 0) !== 1 ? 's' : ''}
+                      </Typography>
+
+                      <Button
+                        size="small"
+                        endIcon={<ArrowForward />}
+                        sx={{
+                          fontWeight: 800,
+                          color: '#2563eb',
+                          textTransform: 'none',
+                        }}
+                      >
+                        Open Class
+                      </Button>
                     </Box>
                   </Box>
                 </Paper>
@@ -500,64 +673,102 @@ export default function Dashboard() {
             })}
           </Box>
         )}
+
+        {/* 3-Dots Action Menu */}
+        <Menu
+          anchorEl={menuAnchorEl}
+          open={Boolean(menuAnchorEl)}
+          onClose={handleCloseMenu}
+          slotProps={{
+            paper: {
+              sx: { borderRadius: 2.5, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' },
+            },
+          }}
+        >
+          {selectedClassroomId && (
+            <>
+              <MenuItem
+                onClick={() => {
+                  const target = classrooms.find((c) => c.id === selectedClassroomId);
+                  if (target) navigator.clipboard.writeText(target.classCode);
+                  setCopySnackbar({ open: true, code: target?.classCode || '' });
+                  handleCloseMenu();
+                }}
+                sx={{ fontSize: '0.85rem', fontWeight: 600 }}
+              >
+                <ContentCopy sx={{ fontSize: 16, mr: 1.5, color: '#64748b' }} /> Copy Class Code
+              </MenuItem>
+
+              <MenuItem
+                onClick={() => {
+                  const target = classrooms.find((c) => c.id === selectedClassroomId);
+                  if (target) handleToggleArchive(target.id, !!target.isArchived);
+                }}
+                sx={{ fontSize: '0.85rem', fontWeight: 600 }}
+              >
+                {classrooms.find((c) => c.id === selectedClassroomId)?.isArchived ? (
+                  <>
+                    <Unarchive sx={{ fontSize: 16, mr: 1.5, color: '#059669' }} /> Restore Classroom
+                  </>
+                ) : (
+                  <>
+                    <Archive sx={{ fontSize: 16, mr: 1.5, color: '#d97706' }} /> Archive Classroom
+                  </>
+                )}
+              </MenuItem>
+            </>
+          )}
+        </Menu>
       </Container>
 
-      {/* FAB for instructor */}
-      {isInstructor && (
-        <Fab
-          color="primary"
-          aria-label="add"
-          sx={{
-            position: 'fixed',
-            bottom: 32,
-            right: 32,
-            boxShadow: '0 8px 24px rgba(21,101,192,0.4)',
-            '&:hover': { boxShadow: '0 12px 32px rgba(21,101,192,0.5)' },
-          }}
-          onClick={() => setOpenCreateDialog(true)}
-        >
-          <Add />
-        </Fab>
-      )}
-
       {/* Create Classroom Dialog */}
-      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>Create New Classroom</DialogTitle>
+      <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 800, pb: 1, color: '#0f172a' }}>Create New Classroom</DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
-          <TextField autoFocus margin="dense" label="Class Name" fullWidth variant="outlined" sx={{ mb: 2 }}
-            value={className} onChange={(e) => setClassName(e.target.value)} required />
-          <TextField margin="dense" label="Subject" fullWidth variant="outlined" sx={{ mb: 2 }}
-            value={subject} onChange={(e) => setSubject(e.target.value)} required />
-          <TextField margin="dense" label="Section" fullWidth variant="outlined" sx={{ mb: 2 }}
-            value={section} onChange={(e) => setSection(e.target.value)} required />
+          <TextField
+            autoFocus margin="dense" label="Class Name" fullWidth variant="outlined" placeholder="e.g. Web Development 101"
+            sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} value={className} onChange={(e) => setClassName(e.target.value)} required
+          />
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mb: 2 }}>
+            <TextField margin="dense" label="Subject Code" fullWidth variant="outlined" placeholder="e.g. ITE301"
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} value={subject} onChange={(e) => setSubject(e.target.value)} required />
+            <TextField margin="dense" label="Section" fullWidth variant="outlined" placeholder="e.g. BSIT 3A"
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} value={section} onChange={(e) => setSection(e.target.value)} required />
+          </Box>
           <TextField margin="dense" label="Description (optional)" fullWidth variant="outlined" multiline rows={3}
-            value={description} onChange={(e) => setDescription(e.target.value)} />
+            placeholder="Brief course overview..." sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} value={description} onChange={(e) => setDescription(e.target.value)} />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
-          <Button onClick={handleCreateClassroom} variant="contained" disabled={!className || !subject || !section}>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setOpenCreateDialog(false)} sx={{ fontWeight: 700, color: '#64748b' }}>Cancel</Button>
+          <Button onClick={handleCreateClassroom} variant="contained" disabled={!className || !subject || !section} sx={{ fontWeight: 800, bgcolor: '#7c3aed', borderRadius: 2.5 }}>
             Create Classroom
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Join Classroom Dialog */}
-      <Dialog open={openJoinDialog} onClose={() => setOpenJoinDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>Join Classroom</DialogTitle>
+      <Dialog open={openJoinDialog} onClose={() => setOpenJoinDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 800, pb: 1, color: '#0f172a' }}>Join a Classroom</DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Enter the class code provided by your instructor.
+          <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
+            Enter the unique Class Code provided by your instructor to enroll.
           </Typography>
-          <TextField autoFocus margin="dense" label="Class Code" fullWidth variant="outlined"
-            value={classCode} onChange={(e) => setClassCode(e.target.value)} placeholder="e.g., WEB101-2024" />
+          <TextField autoFocus margin="dense" label="Class Code" fullWidth variant="outlined" value={classCode} onChange={(e) => setClassCode(e.target.value)} placeholder="e.g., WEB101-9482" sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2.5 } }} />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setOpenJoinDialog(false)}>Cancel</Button>
-          <Button onClick={handleJoinClassroom} variant="contained" disabled={!classCode}>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setOpenJoinDialog(false)} sx={{ fontWeight: 700, color: '#64748b' }}>Cancel</Button>
+          <Button onClick={handleJoinClassroom} variant="contained" disabled={!classCode} sx={{ fontWeight: 800, bgcolor: '#2563eb', borderRadius: 2.5 }}>
             Join Class
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Copy Code Notification Toast */}
+      <Snackbar open={copySnackbar.open} autoHideDuration={3000} onClose={() => setCopySnackbar({ open: false, code: '' })} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert onClose={() => setCopySnackbar({ open: false, code: '' })} severity="success" sx={{ width: '100%', borderRadius: 3, fontWeight: 700 }}>
+          Class Code <strong>{copySnackbar.code}</strong> copied to clipboard!
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
